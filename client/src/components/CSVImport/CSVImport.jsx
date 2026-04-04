@@ -114,7 +114,7 @@ export default function CSVImport() {
 
       {stage === 'upload' && (
         <>
-          <div className="card mb-4" style={{padding:20, borderColor:'rgba(124,58,237,0.2)', background:'var(--accent-gradient-soft)'}}>
+          <div className="card mb-4" style={{padding:20, borderColor:'var(--border-accent)', background:'var(--accent-gradient-soft)'}}>
             <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
               <span style={{fontSize:'1.5rem'}}>💡</span>
               <div>

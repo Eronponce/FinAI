@@ -192,7 +192,7 @@ export default function Income() {
           <div className="stat-card-value">{items.length}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-icon" style={{background:'rgba(124,58,237,0.15)'}}>📊</div>
+          <div className="stat-card-icon" style={{background:'var(--blue-soft)'}}>📊</div>
           <div className="stat-card-label">All Time Total</div>
           <div className="stat-card-value text-accent">{fmt(totalAllTime)}</div>
         </div>

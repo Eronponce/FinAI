@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../utils/api.js';
 import { useCurrency } from '../../hooks/useCurrency.jsx';
-import { CATEGORIES, getCategoryColor } from '../../utils/categories.js';
+import { getCategoryColor } from '../../utils/categories.js';
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip,
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, AreaChart, Area
+  XAxis, YAxis, CartesianGrid, Legend, AreaChart, Area
 } from 'recharts';
 import './Dashboard.css';
 
@@ -59,6 +59,11 @@ export default function Dashboard() {
 
   const netBalance = monthIncome - monthExpenses - monthSubCost;
   const savingsRate = monthIncome > 0 ? ((netBalance / monthIncome) * 100).toFixed(1) : 0;
+  const monthlyExpenseCount = expenses.filter(e => {
+    const d = new Date(e.date + 'T12:00:00');
+    return d.getMonth() + 1 === parseInt(THIS_MONTH) && d.getFullYear() === parseInt(THIS_YEAR);
+  }).length;
+  const activeSubscriptions = subs.filter(s => s.active).length;
 
   // Spending by category
   let filteredPieExpenses = expenses;
@@ -92,6 +97,31 @@ export default function Dashboard() {
     .map(([cat, total]) => ({ name: cat, value: total, color: getCategoryColor(cat) }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
+  const topCategory = pieData[0] || null;
+  const averageTicket = monthlyExpenseCount > 0 ? monthExpenses / monthlyExpenseCount : 0;
+  const incomeCoverage = monthExpenses > 0 ? monthIncome / monthExpenses : 0;
+  const insights = [
+    {
+      label: 'Top spending category',
+      value: topCategory ? topCategory.name : 'No data yet',
+      detail: topCategory ? fmt(topCategory.value) : 'Add expense entries to reveal your top category.',
+    },
+    {
+      label: 'Average ticket this month',
+      value: monthlyExpenseCount > 0 ? fmt(averageTicket) : 'No spend yet',
+      detail: monthlyExpenseCount > 0 ? `${monthlyExpenseCount} transactions logged this month.` : 'Once you log transactions, ticket size will appear here.',
+    },
+    {
+      label: 'Recurring load',
+      value: fmt(monthSubCost),
+      detail: `${activeSubscriptions} active subscription${activeSubscriptions === 1 ? '' : 's'} currently affecting monthly cash flow.`,
+    },
+    {
+      label: 'Income coverage',
+      value: monthExpenses > 0 ? `${incomeCoverage.toFixed(1)}x` : '∞',
+      detail: monthExpenses > 0 ? 'Monthly income divided by monthly expenses.' : 'No expenses recorded this month.',
+    },
+  ];
 
   // Trend Chart Data
   const trendData = [];
@@ -181,12 +211,56 @@ export default function Dashboard() {
 
   return (
     <div className="page-content">
-      <div className="page-header">
-        <h1>Dashboard</h1>
-        <p>Overview for {MONTHS[now.getMonth()]} {now.getFullYear()}</p>
+      <div className="dashboard-hero">
+        <div className="dashboard-hero-copy">
+          <span className="dashboard-kicker">Private Wealth Overview</span>
+          <h1>Dashboard</h1>
+          <p>
+            A cinematic command center for your money, with clear focus on monthly flow,
+            category pressure, and recurring spend.
+          </p>
+          <div className="dashboard-chip-row">
+            <span className="dashboard-chip">{MONTHS[now.getMonth()]} {now.getFullYear()}</span>
+            <span className="dashboard-chip">Savings rate {savingsRate}%</span>
+            <span className="dashboard-chip">{activeSubscriptions} active subscriptions</span>
+          </div>
+        </div>
+
+        <div className="dashboard-hero-panel">
+          <div className="dashboard-hero-focus">
+            <span className="dashboard-hero-label">Net position this month</span>
+            <strong className={netBalance >= 0 ? 'text-green' : 'text-red'}>{fmt(netBalance)}</strong>
+            <p>
+              {netBalance >= 0
+                ? 'Your monthly cash flow is in positive territory.'
+                : 'Expenses and recurring costs are currently ahead of income.'}
+            </p>
+          </div>
+          <div className="dashboard-hero-grid">
+            <div className="dashboard-hero-stat">
+              <span>Top spend</span>
+              <strong>{topCategory ? topCategory.name : 'No data'}</strong>
+              <small>{topCategory ? fmt(topCategory.value) : 'Add expenses to unlock this view'}</small>
+            </div>
+            <div className="dashboard-hero-stat">
+              <span>Average ticket</span>
+              <strong>{monthlyExpenseCount > 0 ? fmt(averageTicket) : 'No spend'}</strong>
+              <small>{monthlyExpenseCount > 0 ? `${monthlyExpenseCount} transactions this month` : 'Waiting for monthly expenses'}</small>
+            </div>
+            <div className="dashboard-hero-stat">
+              <span>Recurring drag</span>
+              <strong>{fmt(monthSubCost)}</strong>
+              <small>{activeSubscriptions} active services</small>
+            </div>
+            <div className="dashboard-hero-stat">
+              <span>Income coverage</span>
+              <strong>{monthExpenses > 0 ? `${incomeCoverage.toFixed(1)}x` : '∞'}</strong>
+              <small>Income relative to monthly expenses</small>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Stat Cards */}
       <div className="grid-4 mb-4">
         <div className="stat-card">
           <div className="stat-card-icon" style={{ background:'var(--green-soft)' }}>💰</div>
@@ -219,15 +293,12 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Charts Row */}
       <div className="grid-2 mb-4">
-        {/* Trend chart */}
-        <div className="card">
+        <div className="card dashboard-chart-card">
           <div className="card-header">
-            <span className="card-title">📊 Income vs Expenses</span>
+            <span className="card-title">Income vs Expenses</span>
             <select 
-              className="badge" 
-              style={{ background: 'var(--bg-body)', border: '1px solid var(--border)', outline: 'none', cursor: 'pointer', color: 'var(--text)', padding: '0.2rem 0.5rem', fontSize: '0.8rem', borderRadius: '4px' }}
+              className="dashboard-filter"
               value={trendRange}
               onChange={e => setTrendRange(e.target.value)}
             >
@@ -243,34 +314,32 @@ export default function Dashboard() {
               <AreaChart data={trendData} margin={{ top:5, right:10, left:10, bottom:5 }}>
                 <defs>
                   <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#f4df9b" stopOpacity={0.38}/>
+                    <stop offset="95%" stopColor="#f4df9b" stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#d66b52" stopOpacity={0.34}/>
+                    <stop offset="95%" stopColor="#d66b52" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="label" tick={{ fill:'#64748b', fontSize:12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill:'#64748b', fontSize:11 }} axisLine={false} tickLine={false} width={55}
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(212,175,55,0.08)" />
+                <XAxis dataKey="label" tick={{ fill:'#9b906d', fontSize:12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill:'#9b906d', fontSize:11 }} axisLine={false} tickLine={false} width={55}
                   tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
                 <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ color:'#94a3b8', fontSize:'0.8rem' }} />
-                <Area type="monotone" dataKey="Income" stroke="#10b981" fill="url(#incGrad)" strokeWidth={2} dot={false} />
-                <Area type="monotone" dataKey="Expenses" stroke="#ef4444" fill="url(#expGrad)" strokeWidth={2} dot={false} />
+                <Legend wrapperStyle={{ color:'#cdbf94', fontSize:'0.8rem' }} />
+                <Area type="monotone" dataKey="Income" stroke="#f4df9b" fill="url(#incGrad)" strokeWidth={2.5} dot={false} />
+                <Area type="monotone" dataKey="Expenses" stroke="#d66b52" fill="url(#expGrad)" strokeWidth={2.2} dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Pie chart */}
-        <div className="card">
+        <div className="card dashboard-chart-card">
           <div className="card-header">
-            <span className="card-title">🍩 Spending by Category</span>
+            <span className="card-title">Spending by Category</span>
             <select 
-              className="badge" 
-              style={{ background: 'var(--bg-body)', border: '1px solid var(--border)', outline: 'none', cursor: 'pointer', color: 'var(--text)', padding: '0.2rem 0.5rem', fontSize: '0.8rem', borderRadius: '4px' }}
+              className="dashboard-filter"
               value={pieRange}
               onChange={e => setPieRange(e.target.value)}
             >
@@ -316,37 +385,53 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Recent Expenses */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">🕐 Recent Transactions</span>
-        </div>
-        <div className="table-wrap">
-          {expenses.slice(0,8).length > 0 ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th><th>Description</th><th>Category</th><th style={{textAlign:'right'}}>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.slice(0,8).map(e => (
-                  <tr key={e.id}>
-                    <td className="text-muted">{e.date}</td>
-                    <td>{e.description}</td>
-                    <td><span className="badge badge-muted">{e.category}</span></td>
-                    <td style={{textAlign:'right'}} className="text-red">{fmt(e.amount)}</td>
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">Recent Transactions</span>
+          </div>
+          <div className="table-wrap">
+            {expenses.slice(0,8).length > 0 ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Description</th><th>Category</th><th style={{textAlign:'right'}}>Amount</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="empty-state">
-              <div className="empty-state-icon">💳</div>
-              <h3>No transactions yet</h3>
-              <p>Start by adding expenses or importing a CSV</p>
-            </div>
-          )}
+                </thead>
+                <tbody>
+                  {expenses.slice(0,8).map(e => (
+                    <tr key={e.id}>
+                      <td className="text-muted">{e.date}</td>
+                      <td>{e.description}</td>
+                      <td><span className="badge badge-muted">{e.category}</span></td>
+                      <td style={{textAlign:'right'}} className="text-red">{fmt(e.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-state-icon">💳</div>
+                <h3>No transactions yet</h3>
+                <p>Start by adding expenses or importing a CSV</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="card dashboard-insight-card">
+          <div className="card-header">
+            <span className="card-title">House View</span>
+          </div>
+          <div className="card-body dashboard-insight-list">
+            {insights.map(item => (
+              <div key={item.label} className="dashboard-insight">
+                <span className="dashboard-insight-label">{item.label}</span>
+                <strong className="dashboard-insight-value">{item.value}</strong>
+                <p>{item.detail}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

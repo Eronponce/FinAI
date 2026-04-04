@@ -82,7 +82,7 @@ export default function Accounts() {
           <div className="stat-card-value text-red">{fmt(totalDebt)}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-icon" style={{ background: 'rgba(124,58,237,0.15)' }}>⚖️</div>
+          <div className="stat-card-icon" style={{ background: 'var(--blue-soft)' }}>⚖️</div>
           <div className="stat-card-label">Net Net Worth</div>
           <div className="stat-card-value text-accent">{fmt(totalBalance)}</div>
         </div>
