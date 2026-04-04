@@ -3,11 +3,12 @@ import { api } from '../../utils/api.js';
 import { useCurrency } from '../../hooks/useCurrency.jsx';
 import { RECURRENCE_OPTIONS } from '../../utils/categories.js';
 
-const EMPTY = { source:'', amount:'', date: new Date().toISOString().slice(0,10), recurrence:'monthly', notes:'' };
+const EMPTY = { source:'', amount:'', date: new Date().toISOString().slice(0,10), recurrence:'one-time', notes:'', account_id: null, is_transfer: false, from_account_id: null, ignore_dashboard: false };
 
 export default function Income() {
   const { fmt } = useCurrency();
   const [items, setItems]   = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing]   = useState(null);
@@ -15,7 +16,12 @@ export default function Income() {
   const [saving, setSaving]     = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  const load = () => api.get('/income').then(setItems).finally(() => setLoading(false));
+  const load = () => {
+    Promise.all([api.get('/income'), api.get('/accounts')]).then(([inc, acc]) => {
+      setItems(inc);
+      setAccounts(acc);
+    }).finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, []);
 
   const totalMonthly = items.reduce((s, i) => {
@@ -34,12 +40,43 @@ export default function Income() {
 
   const save = async () => {
     if (!form.source || !form.amount || !form.date) return;
+    if (form.is_transfer && !form.account_id) { alert("Please select a Destination Account for the transfer."); return; }
+    if (form.is_transfer && !editing?.is_transfer && !form.from_account_id) { alert("Please select a Source Account where the money came from."); return; }
+
     setSaving(true);
     try {
       if (editing) {
         await api.put(`/income/${editing.id}`, form);
+        
+        if (form.is_transfer && !editing.is_transfer && form.from_account_id) {
+          const toAccountName = accounts.find(a => a.id === form.account_id)?.name || 'Account';
+          await api.post('/expenses', {
+            description: `Transfer to ${toAccountName} (${form.source})`,
+            amount: form.amount,
+            date: form.date,
+            account_id: form.from_account_id,
+            category: 'Transfer',
+            is_transfer: 1,
+            payment_method: 'transfer',
+            notes: form.notes
+          });
+        }
       } else {
         await api.post('/income', form);
+        
+        if (form.is_transfer && form.from_account_id) {
+          const toAccountName = accounts.find(a => a.id === form.account_id)?.name || 'Account';
+          await api.post('/expenses', {
+            description: `Transfer to ${toAccountName} (${form.source})`,
+            amount: form.amount,
+            date: form.date,
+            account_id: form.from_account_id,
+            category: 'Transfer',
+            is_transfer: 1,
+            payment_method: 'transfer',
+            notes: form.notes
+          });
+        }
       }
       await load();
       close();
@@ -101,12 +138,17 @@ export default function Income() {
           ) : (
             <table>
               <thead>
-                <tr><th>Source</th><th>Date</th><th>Recurrence</th><th>Notes</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
+                <tr><th>Source</th><th>Account</th><th>Date</th><th>Recurrence</th><th>Notes</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
               </thead>
               <tbody>
                 {items.map(item => (
                   <tr key={item.id}>
-                    <td><strong>{item.source}</strong></td>
+                    <td>
+                      <strong>{item.source}</strong>
+                      {!!item.is_transfer ? <span className="badge badge-blue" style={{marginLeft: 6, fontSize: '0.7rem'}}>Transfer</span> : null}
+                      {!!item.ignore_dashboard && !item.is_transfer ? <span className="badge badge-muted" style={{marginLeft: 6, fontSize: '0.7rem'}}>Hidden</span> : null}
+                    </td>
+                    <td><span className="badge badge-muted">{accounts.find(a => a.id === item.account_id)?.name || '-'}</span></td>
                     <td className="text-muted">{item.date}</td>
                     <td><span className="badge badge-blue">{item.recurrence}</span></td>
                     <td className="text-muted" style={{maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.notes||'-'}</td>
@@ -151,10 +193,20 @@ export default function Income() {
               <button className="btn btn-ghost btn-icon" onClick={close}>✕</button>
             </div>
             <div className="modal-body">
-              <div className="form-group">
-                <label className="form-label">Source *</label>
-                <input id="income-source" className="form-input" placeholder="e.g. Salary, Freelance" value={form.source}
-                  onChange={e => setForm(f=>({...f, source:e.target.value}))} />
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Source *</label>
+                  <input id="income-source" className="form-input" placeholder="e.g. Salary, Freelance" value={form.source}
+                    onChange={e => setForm(f=>({...f, source:e.target.value}))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Account</label>
+                  <select className="form-select" value={form.account_id || ''}
+                    onChange={e => setForm(f=>({...f, account_id: e.target.value ? parseInt(e.target.value) : null}))}>
+                    <option value="">-- No Account --</option>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
@@ -180,6 +232,42 @@ export default function Income() {
                 <input className="form-input" placeholder="Optional note" value={form.notes||''}
                   onChange={e => setForm(f=>({...f, notes:e.target.value}))} />
               </div>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '1rem' }}>
+                <input type="checkbox" id="income-is-transfer" checked={!!form.is_transfer} 
+                  onChange={e => setForm(f=>({...f, is_transfer: e.target.checked}))} style={{ width: 'auto', margin: 0 }} />
+                <label htmlFor="income-is-transfer" style={{ margin: 0, fontWeight: 'bold', cursor: 'pointer', color: 'var(--blue)' }} className="form-label">
+                  🔄 Mark as Transfer between accounts
+                </label>
+              </div>
+
+              {!form.is_transfer && (
+                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '0.5rem' }}>
+                  <input type="checkbox" id="income-ignore-dashboard" checked={!!form.ignore_dashboard} 
+                    onChange={e => setForm(f=>({...f, ignore_dashboard: e.target.checked}))} style={{ width: 'auto', margin: 0 }} />
+                  <label htmlFor="income-ignore-dashboard" style={{ margin: 0, fontWeight: 'normal', cursor: 'pointer' }} className="form-label">
+                    Hide from Dashboard statistics
+                  </label>
+                </div>
+              )}
+
+              {form.is_transfer && (
+                <div className="form-group" style={{ padding: '12px', background: 'var(--bg-body)', borderRadius: '8px', border: '1px solid var(--border)', marginTop: '0.5rem' }}>
+                  {editing?.is_transfer ? (
+                    <div style={{color: 'var(--text-muted)', fontSize: '0.85rem'}}>
+                      ℹ️ This is a transfer record. Editing it here will only update this side of the transaction.
+                    </div>
+                  ) : (
+                    <>
+                      <label className="form-label" style={{ color: 'var(--accent)' }}>Transfer From (Source Account) *</label>
+                      <select className="form-select" value={form.from_account_id || ''}
+                        onChange={e => setForm(f=>({...f, from_account_id: e.target.value ? parseInt(e.target.value) : null}))}>
+                        <option value="">-- Select Source Account --</option>
+                        {accounts.filter(a => a.id !== form.account_id).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={close}>Cancel</button>

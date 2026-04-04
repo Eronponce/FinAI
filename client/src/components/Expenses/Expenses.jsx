@@ -3,11 +3,12 @@ import { api } from '../../utils/api.js';
 import { useCurrency } from '../../hooks/useCurrency.jsx';
 import { CATEGORIES, PAYMENT_METHODS } from '../../utils/categories.js';
 
-const EMPTY = { description:'', amount:'', category:'Food', date: new Date().toISOString().slice(0,10), payment_method:'credit', notes:'' };
+const EMPTY = { description:'', amount:'', category:'Food', date: new Date().toISOString().slice(0,10), payment_method:'credit', notes:'', account_id: null, is_transfer: false, to_account_id: null, ignore_dashboard: false };
 
 export default function Expenses() {
   const { fmt } = useCurrency();
   const [items, setItems]     = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing]   = useState(null);
@@ -17,7 +18,12 @@ export default function Expenses() {
   const [filterCat, setFilterCat] = useState('');
   const [search, setSearch]     = useState('');
 
-  const load = () => api.get('/expenses').then(setItems).finally(() => setLoading(false));
+  const load = () => {
+    Promise.all([api.get('/expenses'), api.get('/accounts')]).then(([exp, acc]) => {
+      setItems(exp);
+      setAccounts(acc);
+    }).finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, []);
 
   const filtered = items.filter(e => {
@@ -34,12 +40,41 @@ export default function Expenses() {
 
   const save = async () => {
     if (!form.description || !form.amount || !form.category || !form.date) return;
+    if (form.is_transfer && !form.account_id) { alert("Please select an Account for the transfer."); return; }
+    if (form.is_transfer && !editing?.is_transfer && !form.to_account_id) { alert("Please select a Destination Account for the transfer."); return; }
+    
     setSaving(true);
     try {
       if (editing) {
         await api.put(`/expenses/${editing.id}`, form);
+        
+        if (form.is_transfer && !editing.is_transfer && form.to_account_id) {
+          const fromAccountName = accounts.find(a => a.id === form.account_id)?.name || 'Account';
+          await api.post('/income', {
+            source: `Transfer from ${fromAccountName} (${form.description})`,
+            amount: form.amount,
+            date: form.date,
+            account_id: form.to_account_id,
+            is_transfer: 1,
+            recurrence: 'one-time',
+            notes: form.notes
+          });
+        }
       } else {
         await api.post('/expenses', form);
+        
+        if (form.is_transfer && form.to_account_id) {
+          const fromAccountName = accounts.find(a => a.id === form.account_id)?.name || 'Account';
+          await api.post('/income', {
+            source: `Transfer from ${fromAccountName} (${form.description})`,
+            amount: form.amount,
+            date: form.date,
+            account_id: form.to_account_id,
+            is_transfer: 1,
+            recurrence: 'one-time',
+            notes: form.notes
+          });
+        }
       }
       await load();
       close();
@@ -98,7 +133,7 @@ export default function Expenses() {
           ) : (
             <table>
               <thead>
-                <tr><th>Date</th><th>Description</th><th>Category</th><th>Payment</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
+                <tr><th>Date</th><th>Description</th><th>Account</th><th>Category</th><th>Payment</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
               </thead>
               <tbody>
                 {filtered.map(item => (
@@ -108,10 +143,13 @@ export default function Expenses() {
                       <div>{item.description}</div>
                       {item.notes && <div style={{fontSize:'0.75rem',color:'var(--text-muted)'}}>{item.notes}</div>}
                     </td>
+                    <td><span className="badge badge-muted">{accounts.find(a => a.id === item.account_id)?.name || '-'}</span></td>
                     <td>
                       <span className="badge badge-muted">
                         {CATEGORIES.find(c=>c.id===item.category)?.icon} {item.category}
                       </span>
+                      {!!item.is_transfer ? <span className="badge badge-blue" style={{marginLeft: 4, fontSize: '0.7rem'}}>Transfer</span> : null}
+                      {!!item.ignore_dashboard && !item.is_transfer ? <span className="badge badge-muted" style={{marginLeft: 4, fontSize: '0.7rem'}}>Hidden</span> : null}
                     </td>
                     <td className="text-muted" style={{fontSize:'0.8rem'}}>{pmLabel(item.payment_method)}</td>
                     <td style={{textAlign:'right'}} className="text-red"><strong>{fmt(item.amount)}</strong></td>
@@ -155,10 +193,20 @@ export default function Expenses() {
               <button className="btn btn-ghost btn-icon" onClick={close}>✕</button>
             </div>
             <div className="modal-body">
-              <div className="form-group">
-                <label className="form-label">Description *</label>
-                <input id="expense-desc" className="form-input" placeholder="e.g. iFood, Mercado" value={form.description}
-                  onChange={e => setForm(f=>({...f, description:e.target.value}))} />
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Description *</label>
+                  <input id="expense-desc" className="form-input" placeholder="e.g. iFood, Mercado" value={form.description}
+                    onChange={e => setForm(f=>({...f, description:e.target.value}))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Account</label>
+                  <select className="form-select" value={form.account_id || ''}
+                    onChange={e => setForm(f=>({...f, account_id: e.target.value ? parseInt(e.target.value) : null}))}>
+                    <option value="">-- No Account --</option>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
@@ -193,6 +241,50 @@ export default function Expenses() {
                 <input className="form-input" placeholder="Optional note" value={form.notes||''}
                   onChange={e => setForm(f=>({...f, notes:e.target.value}))} />
               </div>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '1rem' }}>
+                <input type="checkbox" id="expense-is-transfer" checked={!!form.is_transfer} 
+                  onChange={e => {
+                    const isChecked = e.target.checked;
+                    setForm(f=>({
+                      ...f, 
+                      is_transfer: isChecked, 
+                      category: isChecked ? 'Transfer' : f.category 
+                    }));
+                  }} 
+                  style={{ width: 'auto', margin: 0 }} />
+                <label htmlFor="expense-is-transfer" style={{ margin: 0, fontWeight: 'bold', cursor: 'pointer', color: 'var(--blue)' }} className="form-label">
+                  🔄 Mark as Transfer between accounts
+                </label>
+              </div>
+
+              {!form.is_transfer && (
+                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '0.5rem' }}>
+                  <input type="checkbox" id="expense-ignore-dashboard" checked={!!form.ignore_dashboard} 
+                    onChange={e => setForm(f=>({...f, ignore_dashboard: e.target.checked}))} style={{ width: 'auto', margin: 0 }} />
+                  <label htmlFor="expense-ignore-dashboard" style={{ margin: 0, fontWeight: 'normal', cursor: 'pointer' }} className="form-label">
+                    Hide from Dashboard statistics
+                  </label>
+                </div>
+              )}
+
+              {form.is_transfer && (
+                <div className="form-group" style={{ padding: '12px', background: 'var(--bg-body)', borderRadius: '8px', border: '1px solid var(--border)', marginTop: '0.5rem' }}>
+                  {editing?.is_transfer ? (
+                    <div style={{color: 'var(--text-muted)', fontSize: '0.85rem'}}>
+                      ℹ️ This is a transfer record. Editing it here will only update this side of the transaction.
+                    </div>
+                  ) : (
+                    <>
+                      <label className="form-label" style={{ color: 'var(--accent)' }}>Transfer To (Destination Account) *</label>
+                      <select className="form-select" value={form.to_account_id || ''}
+                        onChange={e => setForm(f=>({...f, to_account_id: e.target.value ? parseInt(e.target.value) : null}))}>
+                        <option value="">-- Select Destination Account --</option>
+                        {accounts.filter(a => a.id !== form.account_id).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={close}>Cancel</button>

@@ -15,15 +15,15 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { source, amount, date, recurrence = 'one-time', notes = '' } = req.body;
+  const { source, amount, date, recurrence = 'one-time', notes = '', account_id = null, is_transfer = 0, ignore_dashboard = 0 } = req.body;
   if (!source || !amount || !date) {
     return res.status(400).json({ error: 'source, amount, and date are required' });
   }
   const result = run(
-    'INSERT INTO income (source, amount, date, recurrence, notes) VALUES (?, ?, ?, ?, ?)',
-    [source, parseFloat(amount), date, recurrence, notes]
+    'INSERT INTO income (source, amount, date, recurrence, notes, account_id, is_transfer, ignore_dashboard) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [source, parseFloat(amount), date, recurrence, notes, account_id, is_transfer ? 1 : 0, ignore_dashboard ? 1 : 0]
   );
-  res.status(201).json({ id: result.lastInsertRowid, source, amount: parseFloat(amount), date, recurrence, notes });
+  res.status(201).json({ id: result.lastInsertRowid, source, amount: parseFloat(amount), date, recurrence, notes, account_id, is_transfer: is_transfer ? 1 : 0, ignore_dashboard: ignore_dashboard ? 1 : 0 });
 });
 
 // Bulk import (from CSV)
@@ -40,8 +40,8 @@ router.post('/import', (req, res) => {
     );
     if (exists) { skipped++; continue; }
     run(
-      'INSERT INTO income (source, amount, date, recurrence, notes) VALUES (?, ?, ?, ?, ?)',
-      [i.source || i.description || 'Imported', parseFloat(i.amount), i.date, 'one-time', i.notes || '']
+      'INSERT INTO income (source, amount, date, recurrence, notes, account_id, is_transfer, ignore_dashboard) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [i.source || i.description || 'Imported', parseFloat(i.amount), i.date, 'one-time', i.notes || '', i.account_id || null, i.is_transfer ? 1 : 0, i.ignore_dashboard ? 1 : 0]
     );
     imported++;
   }
@@ -49,11 +49,11 @@ router.post('/import', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { source, amount, date, recurrence, notes } = req.body;
+  const { source, amount, date, recurrence, notes, account_id, is_transfer, ignore_dashboard } = req.body;
   try {
-    run('UPDATE income SET source=?, amount=?, date=?, recurrence=?, notes=? WHERE id=?',
-      [source, parseFloat(amount), date, recurrence, notes || '', parseInt(req.params.id)]);
-    res.json({ id: parseInt(req.params.id), source, amount: parseFloat(amount), date, recurrence, notes });
+    run('UPDATE income SET source=?, amount=?, date=?, recurrence=?, notes=?, account_id=?, is_transfer=?, ignore_dashboard=? WHERE id=?',
+      [source, parseFloat(amount), date, recurrence, notes || '', account_id || null, is_transfer ? 1 : 0, ignore_dashboard ? 1 : 0, parseInt(req.params.id)]);
+    res.json({ id: parseInt(req.params.id), source, amount: parseFloat(amount), date, recurrence, notes, account_id, is_transfer: is_transfer ? 1 : 0, ignore_dashboard: ignore_dashboard ? 1 : 0 });
   } catch (e) {
     res.status(404).json({ error: 'Not found or update failed' });
   }

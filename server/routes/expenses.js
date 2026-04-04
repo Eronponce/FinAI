@@ -19,15 +19,15 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { description, amount, category, date, payment_method = 'other', notes = '' } = req.body;
+  const { description, amount, category, date, payment_method = 'other', notes = '', account_id = null, is_transfer = 0, ignore_dashboard = 0 } = req.body;
   if (!description || !amount || !category || !date) {
     return res.status(400).json({ error: 'description, amount, category, and date are required' });
   }
   const result = run(
-    'INSERT INTO expenses (description, amount, category, date, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?)',
-    [description, parseFloat(amount), category, date, payment_method, notes]
+    'INSERT INTO expenses (description, amount, category, date, payment_method, notes, account_id, is_transfer, ignore_dashboard) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [description, parseFloat(amount), category, date, payment_method, notes, account_id, is_transfer ? 1 : 0, ignore_dashboard ? 1 : 0]
   );
-  res.status(201).json({ id: result.lastInsertRowid, description, amount: parseFloat(amount), category, date, payment_method, notes });
+  res.status(201).json({ id: result.lastInsertRowid, description, amount: parseFloat(amount), category, date, payment_method, notes, account_id, is_transfer: is_transfer ? 1 : 0, ignore_dashboard: ignore_dashboard ? 1 : 0 });
 });
 
 // Bulk import (from CSV)
@@ -44,8 +44,8 @@ router.post('/import', (req, res) => {
     );
     if (exists) { skipped++; continue; }
     run(
-      'INSERT INTO expenses (description, amount, category, date, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?)',
-      [e.description || 'Imported', parseFloat(e.amount), e.category || 'Other', e.date, e.payment_method || 'other', e.notes || '']
+      'INSERT INTO expenses (description, amount, category, date, payment_method, notes, account_id, is_transfer, ignore_dashboard) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [e.description || 'Imported', parseFloat(e.amount), e.category || 'Other', e.date, e.payment_method || 'other', e.notes || '', e.account_id || null, e.is_transfer ? 1 : 0, e.ignore_dashboard ? 1 : 0]
     );
     imported++;
   }
@@ -53,13 +53,13 @@ router.post('/import', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { description, amount, category, date, payment_method, notes } = req.body;
+  const { description, amount, category, date, payment_method, notes, account_id, is_transfer, ignore_dashboard } = req.body;
   try {
     run(
-      'UPDATE expenses SET description=?, amount=?, category=?, date=?, payment_method=?, notes=? WHERE id=?',
-      [description, parseFloat(amount), category, date, payment_method, notes || '', parseInt(req.params.id)]
+      'UPDATE expenses SET description=?, amount=?, category=?, date=?, payment_method=?, notes=?, account_id=?, is_transfer=?, ignore_dashboard=? WHERE id=?',
+      [description, parseFloat(amount), category, date, payment_method, notes || '', account_id || null, is_transfer ? 1 : 0, ignore_dashboard ? 1 : 0, parseInt(req.params.id)]
     );
-    res.json({ id: parseInt(req.params.id), description, amount: parseFloat(amount), category, date, payment_method, notes });
+    res.json({ id: parseInt(req.params.id), description, amount: parseFloat(amount), category, date, payment_method, notes, account_id, is_transfer: is_transfer ? 1 : 0, ignore_dashboard: ignore_dashboard ? 1 : 0 });
   } catch (e) {
     res.status(500).json({ error: 'Update failed' });
   }
