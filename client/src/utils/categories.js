@@ -1,15 +1,15 @@
 export const CATEGORIES = [
-  { id: 'Food',          label: 'Food & Dining',    icon: '🍽️',  color: '#f59e0b' },
-  { id: 'Housing',       label: 'Housing',           icon: '🏠',  color: '#3b82f6' },
-  { id: 'Transport',     label: 'Transport',         icon: '🚗',  color: '#8b5cf6' },
-  { id: 'Health',        label: 'Health',            icon: '💊',  color: '#10b981' },
-  { id: 'Entertainment', label: 'Entertainment',     icon: '🎬',  color: '#f43f5e' },
-  { id: 'Shopping',      label: 'Shopping',          icon: '🛍️',  color: '#ec4899' },
-  { id: 'Subscriptions', label: 'Subscriptions',     icon: '📱',  color: '#06b6d4' },
-  { id: 'Education',     label: 'Education',         icon: '📚',  color: '#a78bfa' },
-  { id: 'Investments',   label: 'Investments',       icon: '📈',  color: '#34d399' },
-  { id: 'Transfer',      label: 'Transfer',          icon: '↔️',  color: '#94a3b8' },
-  { id: 'Other',         label: 'Other',             icon: '📦',  color: '#64748b' },
+  { id: 'Food',          label: 'Food & Dining',    icon: '🍽️',  color: '#d4af37' },
+  { id: 'Housing',       label: 'Housing',           icon: '🏠',  color: '#f0d58a' },
+  { id: 'Transport',     label: 'Transport',         icon: '🚗',  color: '#b6823c' },
+  { id: 'Health',        label: 'Health',            icon: '💊',  color: '#7f9b63' },
+  { id: 'Entertainment', label: 'Entertainment',     icon: '🎬',  color: '#9f4f3d' },
+  { id: 'Shopping',      label: 'Shopping',          icon: '🛍️',  color: '#c8845c' },
+  { id: 'Subscriptions', label: 'Subscriptions',     icon: '📱',  color: '#8b7a4b' },
+  { id: 'Education',     label: 'Education',         icon: '📚',  color: '#c7a45a' },
+  { id: 'Investments',   label: 'Investments',       icon: '📈',  color: '#5e8d78' },
+  { id: 'Transfer',      label: 'Transfer',          icon: '↔️',  color: '#8e8572' },
+  { id: 'Other',         label: 'Other',             icon: '📦',  color: '#706756' },
 ];
 
 export const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));

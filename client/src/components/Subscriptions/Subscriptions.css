@@ -1,28 +1,84 @@
 .sub-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  padding: 20px;
+  gap: 18px;
+  padding: 22px;
 }
+
 .sub-card {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 18px;
-  transition: all var(--transition);
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(212, 175, 55, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
 }
-.sub-card:hover { border-color: var(--border-hover); transform: translateY(-1px); }
-.sub-card-inactive { opacity: 0.5; }
-.sub-card-top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+
+.sub-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.sub-card-inactive {
+  opacity: 0.62;
+}
+
+.sub-card-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
 .sub-card-icon {
-  width: 42px; height: 42px;
-  border-radius: var(--radius-sm);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.2rem; flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
-.sub-card-info { flex: 1; min-width: 0; }
-.sub-card-name { font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sub-card-cat { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
-.sub-card-amount { font-size: 1.1rem; font-weight: 700; white-space: nowrap; }
-.sub-card-renewal { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
-.sub-card-actions { display: flex; gap: 6px; align-items: center; }
+
+.sub-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sub-card-name {
+  font-weight: 700;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub-card-cat {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.sub-card-amount {
+  font-size: 1.2rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.sub-card-renewal {
+  margin-bottom: 14px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.sub-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
