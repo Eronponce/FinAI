@@ -10,10 +10,10 @@ export default function Settings() {
   const [saved, setSaved]       = useState(false);
   const [clearing, setClearing] = useState(false);
 
+  const [showConfirm, setShowConfirm] = useState(false);
+
   const clearDatabase = async () => {
-    if (!window.confirm("WARNING: This will permanently delete ALL data (Income, Expenses, Subscriptions, Goals) and reset all settings. This action cannot be undone. Are you absolutely sure?")) {
-      return;
-    }
+    setShowConfirm(false);
     setClearing(true);
     try {
       await api.post('/settings/reset');
@@ -124,12 +124,31 @@ export default function Settings() {
             This action will permanently delete all your data including income, expenses, subscriptions, and budget goals. This action cannot be undone.
           </div>
           <div>
-            <button className="btn btn-danger" onClick={clearDatabase} disabled={clearing}>
+            <button className="btn btn-danger" onClick={() => setShowConfirm(true)} disabled={clearing}>
               {clearing ? <span className="spinner" /> : 'Delete All Data & Reset Application'}
             </button>
           </div>
         </div>
       </div>
+
+      {showConfirm && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowConfirm(false)}>
+          <div className="modal" style={{maxWidth: '500px'}}>
+            <div className="modal-header">
+              <span className="modal-title text-red">⚠️ Confirm Full Reset</span>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowConfirm(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p>WARNING: This will permanently delete ALL data (Income, Expenses, Subscriptions, Goals) and reset all settings. This action cannot be undone.</p>
+              <p style={{marginTop: 10, fontWeight: 600}}>Are you absolutely sure?</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowConfirm(false)}>Cancel</button>
+              <button className="btn btn-danger" onClick={clearDatabase}>Confirm Delete All</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

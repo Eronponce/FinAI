@@ -13,6 +13,7 @@ export default function Expenses() {
   const [editing, setEditing]   = useState(null);
   const [form, setForm]         = useState(EMPTY);
   const [saving, setSaving]     = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [filterCat, setFilterCat] = useState('');
   const [search, setSearch]     = useState('');
 
@@ -46,9 +47,14 @@ export default function Expenses() {
   };
 
   const remove = async (id) => {
-    if (!confirm('Delete this expense?')) return;
-    await api.delete(`/expenses/${id}`);
-    setItems(prev => prev.filter(i => i.id !== id));
+    setDeleteConfirm(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    await api.delete(`/expenses/${deleteConfirm}`);
+    setItems(prev => prev.filter(i => i.id !== deleteConfirm));
+    setDeleteConfirm(null);
   };
 
   const pmLabel = (v) => PAYMENT_METHODS.find(p => p.value === v)?.label || v;
@@ -122,6 +128,24 @@ export default function Expenses() {
           )}
         </div>
       </div>
+
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setDeleteConfirm(null)}>
+          <div className="modal" style={{maxWidth: '400px'}}>
+            <div className="modal-header">
+              <span className="modal-title">Confirm Delete</span>
+              <button className="btn btn-ghost btn-icon" onClick={() => setDeleteConfirm(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete this expense?</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDelete}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && close()}>

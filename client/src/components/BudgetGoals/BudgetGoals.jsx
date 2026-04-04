@@ -12,6 +12,7 @@ export default function BudgetGoals() {
   const [editing, setEditing]   = useState(null);
   const [form, setForm]         = useState({ category:'Food', monthly_limit:'' });
   const [saving, setSaving]     = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   const now = new Date();
   const thisMonth = String(now.getMonth() + 1);
@@ -44,9 +45,14 @@ export default function BudgetGoals() {
   };
 
   const remove = async (id) => {
-    if (!confirm('Delete this budget goal?')) return;
-    await api.delete(`/goals/${id}`);
-    setGoals(prev => prev.filter(g => g.id !== id));
+    setDeleteConfirm(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    await api.delete(`/goals/${deleteConfirm}`);
+    setGoals(prev => prev.filter(g => g.id !== deleteConfirm));
+    setDeleteConfirm(null);
   };
 
   const usedCategories = goals.map(g => g.category);
@@ -115,6 +121,24 @@ export default function BudgetGoals() {
           )}
         </div>
       </div>
+
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setDeleteConfirm(null)}>
+          <div className="modal" style={{maxWidth: '400px'}}>
+            <div className="modal-header">
+              <span className="modal-title">Confirm Delete</span>
+              <button className="btn btn-ghost btn-icon" onClick={() => setDeleteConfirm(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete this budget goal?</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDelete}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && close()}>
