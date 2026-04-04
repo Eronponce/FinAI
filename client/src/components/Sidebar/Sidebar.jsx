@@ -3,6 +3,7 @@ import './Sidebar.css';
 
 const NAV = [
   { id: 'dashboard',     icon: '◈',  label: 'Dashboard' },
+  { id: 'accounts',      icon: '🏛',  label: 'Accounts' },
   { id: 'income',        icon: '↑',  label: 'Income' },
   { id: 'expenses',      icon: '↓',  label: 'Expenses' },
   { id: 'subscriptions', icon: '⟳',  label: 'Subscriptions' },

@@ -29,8 +29,8 @@ export default function Dashboard() {
       api.get('/expenses'),
       api.get('/subscriptions'),
     ]).then(([inc, exp, sub]) => {
-      setIncome(inc);
-      setExpenses(exp);
+      setIncome(inc.filter(i => !i.is_transfer && !i.ignore_dashboard));
+      setExpenses(exp.filter(e => !e.is_transfer && !e.ignore_dashboard));
       setSubs(sub);
     }).finally(() => setLoading(false));
   }, []);

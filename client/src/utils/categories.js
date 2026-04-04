@@ -8,6 +8,7 @@ export const CATEGORIES = [
   { id: 'Subscriptions', label: 'Subscriptions',     icon: '📱',  color: '#06b6d4' },
   { id: 'Education',     label: 'Education',         icon: '📚',  color: '#a78bfa' },
   { id: 'Investments',   label: 'Investments',       icon: '📈',  color: '#34d399' },
+  { id: 'Transfer',      label: 'Transfer',          icon: '↔️',  color: '#94a3b8' },
   { id: 'Other',         label: 'Other',             icon: '📦',  color: '#64748b' },
 ];
 

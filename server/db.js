@@ -61,11 +61,48 @@ export async function initDB() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      balance REAL NOT NULL,
+      currency TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Default settings
   db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('currency', 'BRL')");
   db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('currency_symbol', 'R$')");
+
+  // Migrations
+  try { db.run("ALTER TABLE income ADD COLUMN account_id INTEGER"); } catch(e) {}
+  try { db.run("ALTER TABLE expenses ADD COLUMN account_id INTEGER"); } catch(e) {}
+  try { db.run("ALTER TABLE income ADD COLUMN is_transfer INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE expenses ADD COLUMN is_transfer INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE income ADD COLUMN ignore_dashboard INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE expenses ADD COLUMN ignore_dashboard INTEGER DEFAULT 0"); } catch(e) {}
+
+  // Triggers for automatic account balance updates
+  try {
+    db.run(`
+      CREATE TRIGGER IF NOT EXISTS after_income_insert AFTER INSERT ON income WHEN NEW.account_id IS NOT NULL BEGIN UPDATE accounts SET balance = balance + NEW.amount WHERE id = NEW.account_id; END;
+      CREATE TRIGGER IF NOT EXISTS after_income_update AFTER UPDATE ON income BEGIN
+        UPDATE accounts SET balance = balance - OLD.amount WHERE id = OLD.account_id AND OLD.account_id IS NOT NULL;
+        UPDATE accounts SET balance = balance + NEW.amount WHERE id = NEW.account_id AND NEW.account_id IS NOT NULL;
+      END;
+      CREATE TRIGGER IF NOT EXISTS after_income_delete AFTER DELETE ON income WHEN OLD.account_id IS NOT NULL BEGIN UPDATE accounts SET balance = balance - OLD.amount WHERE id = OLD.account_id; END;
+
+      CREATE TRIGGER IF NOT EXISTS after_expenses_insert AFTER INSERT ON expenses WHEN NEW.account_id IS NOT NULL BEGIN UPDATE accounts SET balance = balance - NEW.amount WHERE id = NEW.account_id; END;
+      CREATE TRIGGER IF NOT EXISTS after_expenses_update AFTER UPDATE ON expenses BEGIN
+        UPDATE accounts SET balance = balance + OLD.amount WHERE id = OLD.account_id AND OLD.account_id IS NOT NULL;
+        UPDATE accounts SET balance = balance - NEW.amount WHERE id = NEW.account_id AND NEW.account_id IS NOT NULL;
+      END;
+      CREATE TRIGGER IF NOT EXISTS after_expenses_delete AFTER DELETE ON expenses WHEN OLD.account_id IS NOT NULL BEGIN UPDATE accounts SET balance = balance + OLD.amount WHERE id = OLD.account_id; END;
+    `);
+  } catch (e) {
+    console.error('Trigger creation error:', e);
+  }
 
   persist();
   console.log('✅ SQLite database ready:', DB_PATH);

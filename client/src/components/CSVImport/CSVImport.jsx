@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Papa from 'papaparse';
 import { parseNubankCSV } from '../../utils/csvNubank.js';
 import { CATEGORIES } from '../../utils/categories.js';
@@ -16,7 +16,12 @@ export default function CSVImport() {
   const [importing, setImporting] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError]     = useState('');
+  const [accounts, setAccounts] = useState([]);
   const fileRef = useRef();
+
+  useEffect(() => {
+    api.get('/accounts').then(setAccounts).catch(e => console.error(e));
+  }, []);
 
   const processFile = (file) => {
     setError('');
@@ -173,9 +178,20 @@ export default function CSVImport() {
                     e.target.value = ''; // Reset after selection
                   }}
                 >
-                  <option value="">--</option>
+                  <option value="">-- Type --</option>
                   <option value="expense">Expense</option>
                   <option value="income">Income</option>
+                </select>
+                <select
+                  className="form-select" style={{padding:'4px 8px', fontSize:'0.8rem', width: 'auto'}}
+                  onChange={(e) => {
+                    const acc = e.target.value ? parseInt(e.target.value) : null;
+                    if (e.target.value !== '') setEdited(prev => prev.map(r => ({ ...r, account_id: acc })));
+                    e.target.value = '';
+                  }}
+                >
+                  <option value="">-- Account --</option>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </div>
             </div>
@@ -183,7 +199,7 @@ export default function CSVImport() {
             <div className="table-wrap" style={{maxHeight:480, overflowY:'auto'}}>
               <table>
                 <thead>
-                  <tr><th>Date</th><th>Description</th><th>Type</th><th>Category</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
+                  <tr><th>Date</th><th>Description</th><th>Type</th><th>Account</th><th>Category</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
                 </thead>
                 <tbody>
                   {edited.map((row, i) => (
@@ -201,6 +217,13 @@ export default function CSVImport() {
                           value={row.type} onChange={e => updateRow(i, 'type', e.target.value)}>
                           <option value="expense">Expense</option>
                           <option value="income">Income</option>
+                        </select>
+                      </td>
+                      <td>
+                        <select className="form-select" style={{padding:'4px 8px',fontSize:'0.8rem',width:120}}
+                          value={row.account_id || ''} onChange={e => updateRow(i, 'account_id', e.target.value ? parseInt(e.target.value) : null)}>
+                          <option value="">--</option>
+                          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                         </select>
                       </td>
                       <td>
