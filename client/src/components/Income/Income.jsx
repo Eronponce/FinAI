@@ -15,6 +15,8 @@ export default function Income() {
   const [form, setForm]         = useState(EMPTY);
   const [saving, setSaving]     = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [search, setSearch]     = useState('');
+  const [filterMonth, setFilterMonth] = useState('');
 
   const load = () => {
     Promise.all([api.get('/income'), api.get('/accounts')]).then(([inc, acc]) => {
@@ -33,6 +35,14 @@ export default function Income() {
   }, 0);
 
   const totalAllTime = items.reduce((s, i) => s + i.amount, 0);
+
+  const filtered = items.filter(i => {
+    const matchSearch = !search || i.source.toLowerCase().includes(search.toLowerCase());
+    const matchMonth = !filterMonth || i.date.startsWith(filterMonth);
+    return matchSearch && matchMonth;
+  });
+
+  const filteredTotal = filtered.reduce((s, i) => s + i.amount, 0);
 
   const openAdd  = () => { setEditing(null); setForm(EMPTY); setShowModal(true); };
   const openEdit = (item) => { setEditing(item); setForm({ ...item }); setShowModal(true); };
@@ -122,18 +132,31 @@ export default function Income() {
         </div>
       </div>
 
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">💰 Income Sources</span>
+      <div className="card mb-4">
+        <div className="card-body" style={{display:'flex', gap:12, flexWrap:'wrap', alignItems:'center'}}>
+          <input className="form-input" style={{maxWidth:280}} placeholder="🔍 Search source…"
+            value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="form-input" type="month" style={{maxWidth:200}} value={filterMonth}
+            onChange={e => setFilterMonth(e.target.value)} />
+          {(search || filterMonth) && (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setFilterMonth(''); }}>Clear</button>
+          )}
+          <div style={{marginLeft:'auto'}} className="flex items-center gap-2">
+            <span className="text-muted" style={{fontSize:'0.8rem'}}>{filtered.length} entries</span>
+            <span className="badge badge-green">{fmt(filteredTotal)}</span>
+          </div>
         </div>
+      </div>
+
+      <div className="card">
         <div className="table-wrap">
           {loading ? (
             <div className="empty-state"><div className="spinner" /></div>
-          ) : items.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">💸</div>
-              <h3>No income entries yet</h3>
-              <p>Add your salary, freelance work, or any income source</p>
+              <h3>{items.length === 0 ? 'No income entries yet' : 'No results'}</h3>
+              <p>{items.length === 0 ? 'Add your salary, freelance work, or any income source' : 'Try a different filter'}</p>
             </div>
           ) : (
             <table>
@@ -141,7 +164,7 @@ export default function Income() {
                 <tr><th>Source</th><th>Account</th><th>Date</th><th>Recurrence</th><th>Notes</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
               </thead>
               <tbody>
-                {items.map(item => (
+                {filtered.map(item => (
                   <tr key={item.id}>
                     <td>
                       <strong>{item.source}</strong>
