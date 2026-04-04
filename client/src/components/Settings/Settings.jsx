@@ -3,8 +3,10 @@ import { api } from '../../utils/api.js';
 import { useCurrency } from '../../hooks/useCurrency.jsx';
 import { CURRENCIES } from '../../utils/categories.js';
 
+const RESET_CONFIRMATION = 'RESET-ALL-DATA';
+
 export default function Settings() {
-  const { symbol, code, setSymbol, setCode } = useCurrency();
+  const { setSymbol, setCode } = useCurrency();
   const [settings, setSettings] = useState({ currency:'BRL', currency_symbol:'R$' });
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
@@ -16,7 +18,11 @@ export default function Settings() {
     setShowConfirm(false);
     setClearing(true);
     try {
-      await api.post('/settings/reset');
+      await api.post(
+        '/settings/reset',
+        { confirmation: RESET_CONFIRMATION },
+        { headers: { 'X-Reset-Confirmation': RESET_CONFIRMATION } }
+      );
       window.location.href = '/'; // Redirect to home so they get a fresh state
     } catch (e) {
       alert("Failed to clear database: " + e.message);
@@ -105,12 +111,12 @@ export default function Settings() {
         </div>
         <div className="card-body" style={{display:'flex', flexDirection:'column', gap:12}}>
           <div style={{fontSize:'0.875rem', color:'var(--text-secondary)'}}>
-            Your data is stored locally in <code style={{background:'var(--bg-input)',padding:'1px 6px',borderRadius:4}}>server/finances.db</code> — a SQLite file on your machine. Nothing is sent to any cloud service.
+            Your data is stored locally in <code style={{background:'var(--bg-input)',padding:'1px 6px',borderRadius:4}}>server/finances.db</code> on your machine. Standard tracking features stay local. If you use AI chat or AI categorization, the relevant prompt and financial context are sent to Gemini.
           </div>
           <div style={{gap:8, display:'flex'}}>
-            <span className="badge badge-green">✓ 100% Local</span>
+            <span className="badge badge-green">✓ Local-First</span>
             <span className="badge badge-muted">No Account Required</span>
-            <span className="badge badge-muted">No Internet Needed</span>
+            <span className="badge badge-muted">AI Uses Internet</span>
           </div>
         </div>
       </div>
@@ -121,7 +127,7 @@ export default function Settings() {
         </div>
         <div className="card-body" style={{display:'flex', flexDirection:'column', gap:12}}>
           <div style={{fontSize:'0.875rem', color:'var(--text-secondary)'}}>
-            This action will permanently delete all your data including income, expenses, subscriptions, and budget goals. This action cannot be undone.
+            This action will permanently delete all your data including accounts, income, expenses, subscriptions, budget goals, and saved settings. This action cannot be undone.
           </div>
           <div>
             <button className="btn btn-danger" onClick={() => setShowConfirm(true)} disabled={clearing}>
@@ -139,7 +145,7 @@ export default function Settings() {
               <button className="btn btn-ghost btn-icon" onClick={() => setShowConfirm(false)}>✕</button>
             </div>
             <div className="modal-body">
-              <p>WARNING: This will permanently delete ALL data (Income, Expenses, Subscriptions, Goals) and reset all settings. This action cannot be undone.</p>
+              <p>WARNING: This will permanently delete ALL data (Accounts, Income, Expenses, Subscriptions, Goals) and reset all settings. This action cannot be undone.</p>
               <p style={{marginTop: 10, fontWeight: 600}}>Are you absolutely sure?</p>
             </div>
             <div className="modal-footer">

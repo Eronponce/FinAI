@@ -59,11 +59,13 @@ export default function CSVImport() {
       
       let imported = 0;
       let skipped = 0;
+      let invalid = 0;
 
       if (expenses.length > 0) {
         const resE = await api.post('/expenses/import', { expenses });
         imported += (resE.imported || 0);
         skipped += (resE.skipped || 0);
+        invalid += (resE.invalid || 0);
       }
       
       if (incomes.length > 0) {
@@ -71,9 +73,10 @@ export default function CSVImport() {
         const resI = await api.post('/income/import', { incomes: mappedIncomes });
         imported += (resI.imported || 0);
         skipped += (resI.skipped || 0);
+        invalid += (resI.invalid || 0);
       }
 
-      setResult({ imported, skipped });
+      setResult({ imported, skipped, invalid });
       setStage('done');
     } catch (e) {
       setError(e.message);
@@ -276,6 +279,7 @@ export default function CSVImport() {
           <p style={{color:'var(--text-secondary)', marginBottom:24}}>
             <strong className="text-green">{result.imported}</strong> records imported ·{' '}
             <strong className="text-muted">{result.skipped}</strong> duplicates skipped
+            {result.invalid ? <> · <strong className="text-red">{result.invalid}</strong> invalid rows skipped</> : null}
           </p>
           <button className="btn btn-primary" onClick={reset}>Import Another File</button>
         </div>

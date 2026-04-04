@@ -66,6 +66,10 @@ export default function AIAdvisor() {
         <p>Ask anything about your finances — powered by Gemini AI</p>
       </div>
 
+      <div style={{background:'var(--blue-soft)', border:'1px solid rgba(59,130,246,0.22)', borderRadius:'var(--radius-md)', padding:'12px 16px', marginBottom:16, fontSize:'0.85rem', color:'var(--text-secondary)'}}>
+        AI replies use Google Gemini. When you send a message here, your question plus the relevant finance summary from this app are sent to Gemini to generate the response.
+      </div>
+
       {apiMissing && (
         <div style={{background:'var(--yellow-soft)', border:'1px solid rgba(245,158,11,0.3)', borderRadius:'var(--radius-md)', padding:'12px 16px', marginBottom:16, fontSize:'0.85rem', color:'var(--yellow)'}}>
           <strong>Setup required:</strong> Add <code style={{background:'rgba(0,0,0,0.2)',padding:'1px 6px',borderRadius:4}}>GEMINI_API_KEY=your_key</code> to your <code>.env</code> file and restart the server. Free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{color:'inherit'}}>aistudio.google.com</a>

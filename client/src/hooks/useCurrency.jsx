@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { api } from '../utils/api.js';
 

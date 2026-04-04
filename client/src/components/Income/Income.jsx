@@ -252,8 +252,8 @@ export default function Income() {
                     )}
                     <td>
                       <strong>{item.source}</strong>
-                      {!!item.is_transfer ? <span className="badge badge-blue" style={{marginLeft: 6, fontSize: '0.7rem'}}>Transfer</span> : null}
-                      {!!item.ignore_dashboard && !item.is_transfer ? <span className="badge badge-muted" style={{marginLeft: 6, fontSize: '0.7rem'}}>Hidden</span> : null}
+                      {item.is_transfer ? <span className="badge badge-blue" style={{marginLeft: 6, fontSize: '0.7rem'}}>Transfer</span> : null}
+                      {item.ignore_dashboard && !item.is_transfer ? <span className="badge badge-muted" style={{marginLeft: 6, fontSize: '0.7rem'}}>Hidden</span> : null}
                     </td>
                     <td><span className="badge badge-muted">{accounts.find(a => a.id === item.account_id)?.name || '-'}</span></td>
                     <td className="text-muted">{item.date}</td>

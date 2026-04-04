@@ -1,127 +1,286 @@
 import express from 'express';
 import { all, get, run } from '../db.js';
+import { handleRouteError, HttpError } from '../http.js';
+import {
+  CATEGORY_SET,
+  MAX_IMPORT_ITEMS,
+  PAYMENT_METHOD_SET,
+  assertMaxItems,
+  ensurePlainObject,
+  parseBooleanFlag,
+  parseDateString,
+  parseEnum,
+  parseIdArray,
+  parseIdParam,
+  parseMonthYearFilters,
+  parseOptionalId,
+  parseOptionalString,
+  parsePositiveAmount,
+  parseRequiredString,
+} from '../validation.js';
+
 const router = express.Router();
-const BULK_CATEGORY_SET = new Set([
-  'Food',
-  'Housing',
-  'Transport',
-  'Health',
-  'Entertainment',
-  'Shopping',
-  'Subscriptions',
-  'Education',
-  'Investments',
-  'Transfer',
-  'Other',
-]);
+
+function assertAccountExists(accountId) {
+  if (accountId === null) {
+    return;
+  }
+
+  const account = get('SELECT id FROM accounts WHERE id = ?', [accountId]);
+  if (!account) {
+    throw new HttpError(400, 'account_id does not reference an existing account');
+  }
+}
+
+function parseExpensePayload(input) {
+  const payload = {
+    description: parseRequiredString('description', input?.description, { max: 180 }),
+    amount: parsePositiveAmount('amount', input?.amount),
+    category: parseEnum('category', input?.category, CATEGORY_SET),
+    date: parseDateString('date', input?.date),
+    payment_method: parseEnum('payment_method', input?.payment_method, PAYMENT_METHOD_SET, { defaultValue: 'other' }),
+    notes: parseOptionalString(input?.notes, { max: 1000 }),
+    account_id: parseOptionalId(input?.account_id, 'account_id'),
+    is_transfer: parseBooleanFlag(input?.is_transfer, 'is_transfer'),
+    ignore_dashboard: parseBooleanFlag(input?.ignore_dashboard, 'ignore_dashboard'),
+  };
+
+  assertAccountExists(payload.account_id);
+
+  if (payload.is_transfer) {
+    if (payload.account_id === null) {
+      throw new HttpError(400, 'account_id is required for transfers');
+    }
+
+    payload.category = 'Transfer';
+    payload.payment_method = 'transfer';
+  }
+
+  return payload;
+}
 
 router.get('/', (req, res) => {
-  const { month, year, category } = req.query;
-  let query = 'SELECT * FROM expenses WHERE 1=1';
-  const params = [];
-  if (month && year) {
-    query += ` AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`;
-    params.push(year, month.padStart(2, '0'));
+  try {
+    const filters = parseMonthYearFilters(req.query);
+    const category = req.query.category ? parseEnum('category', req.query.category, CATEGORY_SET) : null;
+
+    let query = 'SELECT * FROM expenses WHERE 1=1';
+    const params = [];
+
+    if (filters) {
+      query += ` AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`;
+      params.push(filters.year, filters.month);
+    }
+
+    if (category) {
+      query += ' AND category = ?';
+      params.push(category);
+    }
+
+    query += ' ORDER BY date DESC';
+    res.json(all(query, params));
+  } catch (error) {
+    handleRouteError(res, error, 'Failed to fetch expenses');
   }
-  if (category) {
-    query += ' AND category = ?';
-    params.push(category);
-  }
-  query += ' ORDER BY date DESC';
-  res.json(all(query, params));
 });
 
 router.post('/', (req, res) => {
-  const { description, amount, category, date, payment_method = 'other', notes = '', account_id = null, is_transfer = 0, ignore_dashboard = 0 } = req.body;
-  if (!description || !amount || !category || !date) {
-    return res.status(400).json({ error: 'description, amount, category, and date are required' });
+  try {
+    const expense = parseExpensePayload(req.body);
+    const result = run(
+      'INSERT INTO expenses (description, amount, category, date, payment_method, notes, account_id, is_transfer, ignore_dashboard) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        expense.description,
+        expense.amount,
+        expense.category,
+        expense.date,
+        expense.payment_method,
+        expense.notes,
+        expense.account_id,
+        expense.is_transfer,
+        expense.ignore_dashboard,
+      ]
+    );
+
+    res.status(201).json({ id: result.lastInsertRowid, ...expense });
+  } catch (error) {
+    handleRouteError(res, error, 'Failed to create expense');
   }
-  const result = run(
-    'INSERT INTO expenses (description, amount, category, date, payment_method, notes, account_id, is_transfer, ignore_dashboard) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [description, parseFloat(amount), category, date, payment_method, notes, account_id, is_transfer ? 1 : 0, ignore_dashboard ? 1 : 0]
-  );
-  res.status(201).json({ id: result.lastInsertRowid, description, amount: parseFloat(amount), category, date, payment_method, notes, account_id, is_transfer: is_transfer ? 1 : 0, ignore_dashboard: ignore_dashboard ? 1 : 0 });
 });
 
-// Bulk import (from CSV)
 router.post('/import', (req, res) => {
-  const { expenses } = req.body;
-  if (!Array.isArray(expenses) || expenses.length === 0) {
-    return res.status(400).json({ error: 'expenses array is required' });
+  try {
+    const expenses = assertMaxItems(req.body?.expenses, MAX_IMPORT_ITEMS, 'expenses');
+    let imported = 0;
+    let skipped = 0;
+    let invalid = 0;
+
+    for (const rawExpense of expenses) {
+      try {
+        const expense = parseExpensePayload(rawExpense);
+        const exists = get(
+          'SELECT id FROM expenses WHERE date=? AND amount=? AND description=?',
+          [expense.date, expense.amount, expense.description]
+        );
+
+        if (exists) {
+          skipped++;
+          continue;
+        }
+
+        run(
+          'INSERT INTO expenses (description, amount, category, date, payment_method, notes, account_id, is_transfer, ignore_dashboard) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            expense.description,
+            expense.amount,
+            expense.category,
+            expense.date,
+            expense.payment_method,
+            expense.notes,
+            expense.account_id,
+            expense.is_transfer,
+            expense.ignore_dashboard,
+          ]
+        );
+        imported++;
+      } catch (error) {
+        invalid++;
+      }
+    }
+
+    res.json({ imported, skipped, invalid });
+  } catch (error) {
+    handleRouteError(res, error, 'Failed to import expenses');
   }
-  let imported = 0, skipped = 0;
-  for (const e of expenses) {
-    const exists = get(
-      'SELECT id FROM expenses WHERE date=? AND amount=? AND description=?',
-      [e.date, parseFloat(e.amount), e.description]
-    );
-    if (exists) { skipped++; continue; }
-    run(
-      'INSERT INTO expenses (description, amount, category, date, payment_method, notes, account_id, is_transfer, ignore_dashboard) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [e.description || 'Imported', parseFloat(e.amount), e.category || 'Other', e.date, e.payment_method || 'other', e.notes || '', e.account_id || null, e.is_transfer ? 1 : 0, e.ignore_dashboard ? 1 : 0]
-    );
-    imported++;
-  }
-  res.json({ imported, skipped });
 });
 
 router.delete('/bulk', (req, res) => {
-  const { ids } = req.body;
-  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
-  for (const id of ids) run('DELETE FROM expenses WHERE id=?', [parseInt(id)]);
-  res.json({ deleted: ids.length });
+  try {
+    const ids = parseIdArray(req.body?.ids);
+    let deleted = 0;
+
+    for (const id of ids) {
+      deleted += run('DELETE FROM expenses WHERE id=?', [id]).changes;
+    }
+
+    res.json({ deleted });
+  } catch (error) {
+    handleRouteError(res, error, 'Failed to delete expenses');
+  }
 });
 
 router.put('/bulk', (req, res) => {
-  const { ids, updates } = req.body;
-  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
-  if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'updates object required' });
-  const allowed = ['category', 'payment_method', 'account_id', 'ignore_dashboard'];
-  const fields = Object.keys(updates).filter(k => allowed.includes(k));
-  if (fields.length === 0) return res.status(400).json({ error: 'no valid fields to update' });
-  const setClauses = fields.map(f => `${f}=?`).join(', ');
-  const values = fields.map(f => f === 'ignore_dashboard' ? (updates[f] ? 1 : 0) : (updates[f] ?? null));
-  for (const id of ids) run(`UPDATE expenses SET ${setClauses} WHERE id=?`, [...values, parseInt(id)]);
-  res.json({ updated: ids.length });
+  try {
+    const ids = parseIdArray(req.body?.ids);
+    const updates = ensurePlainObject(req.body?.updates, 'updates');
+    const allowedKeys = ['category', 'payment_method', 'account_id', 'ignore_dashboard'];
+    const fields = Object.keys(updates).filter((key) => allowedKeys.includes(key));
+
+    if (fields.length === 0) {
+      throw new HttpError(400, 'No valid fields to update');
+    }
+
+    const normalizedUpdates = {};
+    for (const field of fields) {
+      if (field === 'category') {
+        normalizedUpdates.category = parseEnum('category', updates.category, CATEGORY_SET);
+      }
+      if (field === 'payment_method') {
+        normalizedUpdates.payment_method = parseEnum('payment_method', updates.payment_method, PAYMENT_METHOD_SET);
+      }
+      if (field === 'account_id') {
+        normalizedUpdates.account_id = parseOptionalId(updates.account_id, 'account_id');
+        assertAccountExists(normalizedUpdates.account_id);
+      }
+      if (field === 'ignore_dashboard') {
+        normalizedUpdates.ignore_dashboard = parseBooleanFlag(updates.ignore_dashboard, 'ignore_dashboard');
+      }
+    }
+
+    const updateFields = Object.keys(normalizedUpdates);
+    const setClauses = updateFields.map((field) => `${field}=?`).join(', ');
+    const values = updateFields.map((field) => normalizedUpdates[field]);
+
+    let updated = 0;
+    for (const id of ids) {
+      updated += run(`UPDATE expenses SET ${setClauses} WHERE id=?`, [...values, id]).changes;
+    }
+
+    res.json({ updated });
+  } catch (error) {
+    handleRouteError(res, error, 'Failed to bulk update expenses');
+  }
 });
 
 router.put('/bulk/categories', (req, res) => {
-  const { suggestions } = req.body;
-  if (!suggestions || typeof suggestions !== 'object') {
-    return res.status(400).json({ error: 'suggestions object required' });
+  try {
+    const suggestions = ensurePlainObject(req.body?.suggestions, 'suggestions');
+    const entries = Object.entries(suggestions);
+
+    if (entries.length === 0) {
+      throw new HttpError(400, 'No category updates were provided');
+    }
+
+    if (entries.length > MAX_IMPORT_ITEMS) {
+      throw new HttpError(400, `suggestions cannot contain more than ${MAX_IMPORT_ITEMS} items`);
+    }
+
+    let updated = 0;
+    for (const [rawId, rawCategory] of entries) {
+      const id = parseIdParam(rawId, 'id');
+      const category = parseEnum('category', rawCategory, CATEGORY_SET);
+      updated += run('UPDATE expenses SET category=? WHERE id=?', [category, id]).changes;
+    }
+
+    res.json({ updated });
+  } catch (error) {
+    handleRouteError(res, error, 'Failed to update expense categories');
   }
-
-  const entries = Object.entries(suggestions)
-    .map(([id, category]) => ({ id: parseInt(id), category: String(category || '').trim() }))
-    .filter(entry => Number.isInteger(entry.id) && BULK_CATEGORY_SET.has(entry.category));
-
-  if (entries.length === 0) {
-    return res.status(400).json({ error: 'no valid category updates provided' });
-  }
-
-  for (const entry of entries) {
-    run('UPDATE expenses SET category=? WHERE id=?', [entry.category, entry.id]);
-  }
-
-  res.json({ updated: entries.length });
 });
 
 router.put('/:id', (req, res) => {
-  const { description, amount, category, date, payment_method, notes, account_id, is_transfer, ignore_dashboard } = req.body;
   try {
-    run(
+    const id = parseIdParam(req.params.id, 'id');
+    const expense = parseExpensePayload(req.body);
+    const result = run(
       'UPDATE expenses SET description=?, amount=?, category=?, date=?, payment_method=?, notes=?, account_id=?, is_transfer=?, ignore_dashboard=? WHERE id=?',
-      [description, parseFloat(amount), category, date, payment_method, notes || '', account_id || null, is_transfer ? 1 : 0, ignore_dashboard ? 1 : 0, parseInt(req.params.id)]
+      [
+        expense.description,
+        expense.amount,
+        expense.category,
+        expense.date,
+        expense.payment_method,
+        expense.notes,
+        expense.account_id,
+        expense.is_transfer,
+        expense.ignore_dashboard,
+        id,
+      ]
     );
-    res.json({ id: parseInt(req.params.id), description, amount: parseFloat(amount), category, date, payment_method, notes, account_id, is_transfer: is_transfer ? 1 : 0, ignore_dashboard: ignore_dashboard ? 1 : 0 });
-  } catch (e) {
-    res.status(500).json({ error: 'Update failed' });
+
+    if (result.changes === 0) {
+      throw new HttpError(404, 'Expense not found');
+    }
+
+    res.json({ id, ...expense });
+  } catch (error) {
+    handleRouteError(res, error, 'Failed to update expense');
   }
 });
 
 router.delete('/:id', (req, res) => {
-  run('DELETE FROM expenses WHERE id=?', [parseInt(req.params.id)]);
-  res.json({ success: true });
+  try {
+    const id = parseIdParam(req.params.id, 'id');
+    const result = run('DELETE FROM expenses WHERE id=?', [id]);
+
+    if (result.changes === 0) {
+      throw new HttpError(404, 'Expense not found');
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    handleRouteError(res, error, 'Failed to delete expense');
+  }
 });
 
 export default router;
