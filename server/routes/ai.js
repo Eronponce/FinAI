@@ -181,7 +181,7 @@ Example Output:
       generationConfig: {
         temperature: 0.1,
         maxOutputTokens: 2048,
-        response_mime_type: "application/json"
+        responseMimeType: "application/json"
       }
     };
 
@@ -208,10 +208,22 @@ Example Output:
     }
 
     try {
-      const suggestions = JSON.parse(text);
+      let cleanedText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+      let suggestions;
+      try {
+        suggestions = JSON.parse(cleanedText);
+      } catch (e) {
+        // Fallback: try to extract the JSON object with regex
+        const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          suggestions = JSON.parse(jsonMatch[0]);
+        } else {
+          throw e; // throw again if no match
+        }
+      }
       return res.json({ suggestions });
     } catch (parseErr) {
-      console.error('Failed to parse AI JSON:', text);
+      console.error('Failed to parse AI JSON. Raw text:', text);
       return res.status(502).json({ error: 'AI returned invalid JSON format' });
     }
 

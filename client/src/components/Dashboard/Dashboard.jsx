@@ -20,6 +20,8 @@ export default function Dashboard() {
   const [expenses, setExpenses] = useState([]);
   const [subs, setSubs]       = useState([]);
   const [loading, setLoading] = useState(true);
+  const [trendRange, setTrendRange] = useState('6m');
+  const [pieRange, setPieRange] = useState('all');
 
   useEffect(() => {
     Promise.all([
@@ -58,9 +60,32 @@ export default function Dashboard() {
   const netBalance = monthIncome - monthExpenses - monthSubCost;
   const savingsRate = monthIncome > 0 ? ((netBalance / monthIncome) * 100).toFixed(1) : 0;
 
-  // Spending by category (all time)
+  // Spending by category
+  let filteredPieExpenses = expenses;
+  if (pieRange !== 'all') {
+    filteredPieExpenses = expenses.filter(e => {
+      const d = new Date(e.date + 'T12:00:00');
+      const m = d.getMonth();
+      const y = d.getFullYear();
+      
+      if (pieRange === 'this_month') {
+        return m === now.getMonth() && y === now.getFullYear();
+      }
+      if (pieRange === 'last_month') {
+        const lastMonth = now.getMonth() - 1;
+        const targetM = lastMonth < 0 ? 11 : lastMonth;
+        const targetY = lastMonth < 0 ? now.getFullYear() - 1 : now.getFullYear();
+        return m === targetM && y === targetY;
+      }
+      const diffMonths = (now.getFullYear() - y) * 12 + (now.getMonth() - m);
+      if (pieRange === '3m') return diffMonths >= 0 && diffMonths < 3;
+      if (pieRange === '6m') return diffMonths >= 0 && diffMonths < 6;
+      return true;
+    });
+  }
+
   const byCat = {};
-  expenses.forEach(e => {
+  filteredPieExpenses.forEach(e => {
     byCat[e.category] = (byCat[e.category] || 0) + e.amount;
   });
   const pieData = Object.entries(byCat)
@@ -68,21 +93,58 @@ export default function Dashboard() {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
-  // Monthly trend (last 6 months)
+  // Trend Chart Data
   const trendData = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const m = d.getMonth() + 1;
-    const y = d.getFullYear();
-    const inc = income.filter(x => {
-      const xd = new Date(x.date + 'T12:00:00');
-      return xd.getMonth() + 1 === m && xd.getFullYear() === y;
-    }).reduce((s, x) => s + x.amount, 0);
-    const exp = expenses.filter(x => {
-      const xd = new Date(x.date + 'T12:00:00');
-      return xd.getMonth() + 1 === m && xd.getFullYear() === y;
-    }).reduce((s, x) => s + x.amount, 0);
-    trendData.push({ month: MONTHS[d.getMonth()], Income: inc, Expenses: exp });
+  if (trendRange === 'this_month' || trendRange === 'last_month') {
+    const targetMonth = trendRange === 'this_month' ? now.getMonth() : now.getMonth() - 1;
+    const targetYear = targetMonth < 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const realTargetMonth = targetMonth < 0 ? 11 : targetMonth;
+    const daysInMonth = new Date(targetYear, realTargetMonth + 1, 0).getDate();
+
+    for (let i = 1; i <= daysInMonth; i++) {
+      const inc = income.filter(x => {
+        const d = new Date(x.date + 'T12:00:00');
+        return d.getDate() === i && d.getMonth() === realTargetMonth && d.getFullYear() === targetYear;
+      }).reduce((s, x) => s + x.amount, 0);
+      const exp = expenses.filter(x => {
+        const d = new Date(x.date + 'T12:00:00');
+        return d.getDate() === i && d.getMonth() === realTargetMonth && d.getFullYear() === targetYear;
+      }).reduce((s, x) => s + x.amount, 0);
+
+      trendData.push({ label: `${i} ${MONTHS[realTargetMonth]}`, Income: inc, Expenses: exp });
+    }
+  } else {
+    let monthsToShow = 6;
+    if (trendRange === '3m') monthsToShow = 3;
+    if (trendRange === 'all') {
+      const allDates = [...income, ...expenses].map(x => new Date(x.date + 'T12:00:00'));
+      if (allDates.length > 0) {
+        const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+        monthsToShow = (now.getFullYear() - minDate.getFullYear()) * 12 + (now.getMonth() - minDate.getMonth()) + 1;
+      } else {
+        monthsToShow = 6;
+      }
+    }
+
+    // Cap to a reasonable amount to avoid freezing if 100 years of data
+    if (monthsToShow > 120) monthsToShow = 120; 
+
+    for (let i = monthsToShow - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const m = d.getMonth() + 1;
+      const y = d.getFullYear();
+      const inc = income.filter(x => {
+        const xd = new Date(x.date + 'T12:00:00');
+        return xd.getMonth() + 1 === m && xd.getFullYear() === y;
+      }).reduce((s, x) => s + x.amount, 0);
+      const exp = expenses.filter(x => {
+        const xd = new Date(x.date + 'T12:00:00');
+        return xd.getMonth() + 1 === m && xd.getFullYear() === y;
+      }).reduce((s, x) => s + x.amount, 0);
+      
+      const label = trendRange === 'all' && monthsToShow > 12 ? `${MONTHS[d.getMonth()]} '${String(y).slice(2)}` : MONTHS[d.getMonth()];
+      trendData.push({ label, Income: inc, Expenses: exp });
+    }
   }
 
   const CustomTooltip = ({ active, payload, label }) => {
@@ -163,7 +225,18 @@ export default function Dashboard() {
         <div className="card">
           <div className="card-header">
             <span className="card-title">📊 Income vs Expenses</span>
-            <span className="badge badge-muted">Last 6 months</span>
+            <select 
+              className="badge" 
+              style={{ background: 'var(--bg-body)', border: '1px solid var(--border)', outline: 'none', cursor: 'pointer', color: 'var(--text)', padding: '0.2rem 0.5rem', fontSize: '0.8rem', borderRadius: '4px' }}
+              value={trendRange}
+              onChange={e => setTrendRange(e.target.value)}
+            >
+              <option value="all">All time</option>
+              <option value="6m">Last 6 months</option>
+              <option value="3m">Last 3 months</option>
+              <option value="last_month">Last month</option>
+              <option value="this_month">This month</option>
+            </select>
           </div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={240}>
@@ -179,7 +252,7 @@ export default function Dashboard() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="month" tick={{ fill:'#64748b', fontSize:12 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="label" tick={{ fill:'#64748b', fontSize:12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill:'#64748b', fontSize:11 }} axisLine={false} tickLine={false} width={55}
                   tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
                 <Tooltip content={<CustomTooltip />} />
@@ -195,7 +268,18 @@ export default function Dashboard() {
         <div className="card">
           <div className="card-header">
             <span className="card-title">🍩 Spending by Category</span>
-            <span className="badge badge-muted">All time</span>
+            <select 
+              className="badge" 
+              style={{ background: 'var(--bg-body)', border: '1px solid var(--border)', outline: 'none', cursor: 'pointer', color: 'var(--text)', padding: '0.2rem 0.5rem', fontSize: '0.8rem', borderRadius: '4px' }}
+              value={pieRange}
+              onChange={e => setPieRange(e.target.value)}
+            >
+              <option value="all">All time</option>
+              <option value="6m">Last 6 months</option>
+              <option value="3m">Last 3 months</option>
+              <option value="last_month">Last month</option>
+              <option value="this_month">This month</option>
+            </select>
           </div>
           <div className="card-body dash-pie-wrap">
             {pieData.length > 0 ? (
