@@ -26,6 +26,28 @@ router.post('/', (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, source, amount: parseFloat(amount), date, recurrence, notes });
 });
 
+// Bulk import (from CSV)
+router.post('/import', (req, res) => {
+  const { incomes } = req.body;
+  if (!Array.isArray(incomes) || incomes.length === 0) {
+    return res.status(400).json({ error: 'incomes array is required' });
+  }
+  let imported = 0, skipped = 0;
+  for (const i of incomes) {
+    const exists = get(
+      'SELECT id FROM income WHERE date=? AND amount=? AND source=?',
+      [i.date, parseFloat(i.amount), i.source || i.description]
+    );
+    if (exists) { skipped++; continue; }
+    run(
+      'INSERT INTO income (source, amount, date, recurrence, notes) VALUES (?, ?, ?, ?, ?)',
+      [i.source || i.description || 'Imported', parseFloat(i.amount), i.date, 'one-time', i.notes || '']
+    );
+    imported++;
+  }
+  res.json({ imported, skipped });
+});
+
 router.put('/:id', (req, res) => {
   const { source, amount, date, recurrence, notes } = req.body;
   try {

@@ -8,6 +8,21 @@ export default function Settings() {
   const [settings, setSettings] = useState({ currency:'BRL', currency_symbol:'R$' });
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const clearDatabase = async () => {
+    if (!window.confirm("WARNING: This will permanently delete ALL data (Income, Expenses, Subscriptions, Goals) and reset all settings. This action cannot be undone. Are you absolutely sure?")) {
+      return;
+    }
+    setClearing(true);
+    try {
+      await api.post('/settings/reset');
+      window.location.href = '/'; // Redirect to home so they get a fresh state
+    } catch (e) {
+      alert("Failed to clear database: " + e.message);
+      setClearing(false);
+    }
+  };
 
   useEffect(() => {
     api.get('/settings').then(s => { setSettings(s); }).catch(() => {});
@@ -96,6 +111,22 @@ export default function Settings() {
             <span className="badge badge-green">✓ 100% Local</span>
             <span className="badge badge-muted">No Account Required</span>
             <span className="badge badge-muted">No Internet Needed</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{maxWidth:560, marginTop:20, borderColor:'rgba(239, 68, 68, 0.4)'}}>
+        <div className="card-header" style={{borderBottomColor:'rgba(239, 68, 68, 0.2)'}}>
+          <span className="card-title text-red">⚠️ Danger Zone</span>
+        </div>
+        <div className="card-body" style={{display:'flex', flexDirection:'column', gap:12}}>
+          <div style={{fontSize:'0.875rem', color:'var(--text-secondary)'}}>
+            This action will permanently delete all your data including income, expenses, subscriptions, and budget goals. This action cannot be undone.
+          </div>
+          <div>
+            <button className="btn btn-danger" onClick={clearDatabase} disabled={clearing}>
+              {clearing ? <span className="spinner" /> : 'Delete All Data & Reset Application'}
+            </button>
           </div>
         </div>
       </div>

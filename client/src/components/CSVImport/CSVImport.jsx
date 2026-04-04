@@ -51,8 +51,26 @@ export default function CSVImport() {
   const doImport = async () => {
     setImporting(true);
     try {
-      const res = await api.post('/expenses/import', { expenses: edited });
-      setResult(res);
+      const expenses = edited.filter(e => e.type === 'expense');
+      const incomes = edited.filter(e => e.type === 'income');
+      
+      let imported = 0;
+      let skipped = 0;
+
+      if (expenses.length > 0) {
+        const resE = await api.post('/expenses/import', { expenses });
+        imported += (resE.imported || 0);
+        skipped += (resE.skipped || 0);
+      }
+      
+      if (incomes.length > 0) {
+        const mappedIncomes = incomes.map(i => ({ ...i, source: i.description }));
+        const resI = await api.post('/income/import', { incomes: mappedIncomes });
+        imported += (resI.imported || 0);
+        skipped += (resI.skipped || 0);
+      }
+
+      setResult({ imported, skipped });
       setStage('done');
     } catch (e) {
       setError(e.message);
@@ -142,14 +160,30 @@ export default function CSVImport() {
                 </button>
               </div>
             </div>
-            <div style={{padding:'12px 20px', borderBottom:'1px solid var(--border)', fontSize:'0.82rem', color:'var(--text-secondary)'}}>
-              Review and adjust categories before importing. You can remove any row.
+            <div style={{padding:'12px 20px', borderBottom:'1px solid var(--border)', fontSize:'0.82rem', color:'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+              <span>Review types and categories before importing. Pink ones are expenses, green are income. You can remove any row.</span>
+              <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                <span style={{fontWeight: 600}}>Set all to:</span>
+                <select 
+                  className="form-select" 
+                  style={{padding:'4px 8px', fontSize:'0.8rem', width: 'auto'}}
+                  onChange={(e) => {
+                    const t = e.target.value;
+                    if (t) setEdited(prev => prev.map(r => ({ ...r, type: t })));
+                    e.target.value = ''; // Reset after selection
+                  }}
+                >
+                  <option value="">--</option>
+                  <option value="expense">Expense</option>
+                  <option value="income">Income</option>
+                </select>
+              </div>
             </div>
             {error && <div className="csv-error" style={{margin:'0 20px'}}>{error}</div>}
             <div className="table-wrap" style={{maxHeight:480, overflowY:'auto'}}>
               <table>
                 <thead>
-                  <tr><th>Date</th><th>Description</th><th>Category</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
+                  <tr><th>Date</th><th>Description</th><th>Type</th><th>Category</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
                 </thead>
                 <tbody>
                   {edited.map((row, i) => (
@@ -163,12 +197,19 @@ export default function CSVImport() {
                           value={row.description} onChange={e => updateRow(i, 'description', e.target.value)} />
                       </td>
                       <td>
+                        <select className="form-select" style={{padding:'4px 8px',fontSize:'0.8rem',width:100}}
+                          value={row.type} onChange={e => updateRow(i, 'type', e.target.value)}>
+                          <option value="expense">Expense</option>
+                          <option value="income">Income</option>
+                        </select>
+                      </td>
+                      <td>
                         <select className="form-select" style={{padding:'4px 8px',fontSize:'0.8rem',width:160}}
                           value={row.category} onChange={e => updateRow(i, 'category', e.target.value)}>
                           {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
                         </select>
                       </td>
-                      <td style={{textAlign:'right'}} className="text-red">
+                      <td style={{textAlign:'right'}} className={row.type === 'income' ? 'text-green' : 'text-red'}>
                         <input type="number" step="0.01" className="form-input" style={{width:100,padding:'4px 8px',fontSize:'0.8rem',textAlign:'right'}}
                           value={row.amount} onChange={e => updateRow(i, 'amount', e.target.value)} />
                       </td>
@@ -189,7 +230,7 @@ export default function CSVImport() {
           <div style={{fontSize:'4rem',marginBottom:16}}>🎉</div>
           <h2 style={{marginBottom:8}}>Import Complete!</h2>
           <p style={{color:'var(--text-secondary)', marginBottom:24}}>
-            <strong className="text-green">{result.imported}</strong> expenses imported ·{' '}
+            <strong className="text-green">{result.imported}</strong> records imported ·{' '}
             <strong className="text-muted">{result.skipped}</strong> duplicates skipped
           </p>
           <button className="btn btn-primary" onClick={reset}>Import Another File</button>

@@ -77,11 +77,26 @@ export function parseNubankCSV(rows) {
     })
     .map(row => {
       const raw = String(row[amountCol] || '0').replace(',', '.');
-      const amount = Math.abs(parseFloat(raw));
+      const parsedAmt = parseFloat(raw);
+      
+      const isAccount = headers.some(h => h.toLowerCase() === 'identificador');
+      let type = 'expense';
+      
+      if (isAccount) {
+        // Nubank Account CSV: Income is positive, Expense is negative
+        type = parsedAmt > 0 ? 'income' : 'expense';
+      } else {
+        // Nubank Credit Card CSV: Expenses are positive, Payments are negative
+        type = parsedAmt < 0 ? 'income' : 'expense';
+      }
+      
+      const amount = Math.abs(parsedAmt);
+      
       return {
         date: parseDate(row[dateCol]),
         description: row[descCol] || 'Imported',
         amount,
+        type,
         category: catCol ? mapNubankCategory(row[catCol]) : 'Other',
         payment_method: 'credit',
         notes: '',
