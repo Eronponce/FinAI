@@ -1,5 +1,14 @@
 import express from 'express';
 import { all, get } from '../db.js';
+import { handleRouteError, HttpError } from '../http.js';
+import {
+  MAX_AI_SUGGESTION_ITEMS,
+  assertMaxItems,
+  parseOptionalString,
+  parsePositiveAmount,
+  parseRequiredString,
+} from '../validation.js';
+
 const router = express.Router();
 
 const AI_CATEGORY_LIST = [
@@ -16,13 +25,15 @@ const AI_CATEGORY_LIST = [
 ];
 
 const AI_CATEGORY_SET = new Set(AI_CATEGORY_LIST);
-const AI_CATEGORY_MAP = new Map(AI_CATEGORY_LIST.map(category => [category.toLowerCase(), category]));
+const AI_CATEGORY_MAP = new Map(AI_CATEGORY_LIST.map((category) => [category.toLowerCase(), category]));
 const AI_SUGGESTION_CHUNK_SIZE = 30;
+const AI_REQUEST_TIMEOUT_MS = 15000;
+const MAX_CHAT_MESSAGE_LENGTH = 2000;
 
 function chunkArray(items, size) {
   const chunks = [];
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
   }
   return chunks;
 }
@@ -80,6 +91,22 @@ function parseAiJsonObject(text) {
   }
 }
 
+async function fetchWithTimeout(url, options, timeoutMs = AI_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new HttpError(504, 'AI request timed out');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function getHistoricalCategoryMap() {
   const historyRows = all(`
     SELECT description, category, COUNT(*) as count
@@ -133,7 +160,7 @@ Category guide:
 - Investments: brokerages, crypto, stocks, retirement contributions.
 
 Transactions:
-${entries.map(entry => `ID: ${entry.id}\nOriginal: ${entry.description}\nCleaned: ${entry.cleanedDescription}\nAmount: ${entry.amount}`).join('\n\n')}
+${entries.map((entry) => `ID: ${entry.id}\nOriginal: ${entry.description}\nCleaned: ${entry.cleanedDescription}\nAmount: ${entry.amount}`).join('\n\n')}
 
 Example output:
 {
@@ -147,16 +174,16 @@ async function requestGeminiCategoryChunk(entries, apiKey) {
     generationConfig: {
       temperature: 0.1,
       maxOutputTokens: 1024,
-      responseMimeType: 'application/json'
-    }
+      responseMimeType: 'application/json',
+    },
   };
 
-  const geminiRes = await fetch(
+  const geminiRes = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey.trim()}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody)
+      body: JSON.stringify(geminiBody),
     }
   );
 
@@ -198,15 +225,15 @@ function buildFinancialContext() {
     const incomeTotal = get(`SELECT SUM(amount) as total FROM income WHERE date >= date('now', '-3 months')`);
     const subscriptions = all(`SELECT name, amount, cycle FROM subscriptions WHERE active=1`);
 
-    const monthlySubTotal = subscriptions.reduce((sum, s) => {
-      if (s.cycle === 'monthly') return sum + Number(s.amount);
-      if (s.cycle === 'yearly')  return sum + Number(s.amount) / 12;
-      if (s.cycle === 'weekly')  return sum + Number(s.amount) * 4.33;
-      return sum + Number(s.amount);
+    const monthlySubTotal = subscriptions.reduce((sum, subscription) => {
+      if (subscription.cycle === 'monthly') return sum + Number(subscription.amount);
+      if (subscription.cycle === 'yearly') return sum + Number(subscription.amount) / 12;
+      if (subscription.cycle === 'weekly') return sum + Number(subscription.amount) * 4.33;
+      return sum + Number(subscription.amount);
     }, 0);
 
     const goals = all('SELECT category, monthly_limit FROM budget_goals');
-    const recentExpenses = all(`SELECT description, amount, category, date FROM expenses ORDER BY date DESC LIMIT 20`);
+    const recentExpenses = all('SELECT description, amount, category, date FROM expenses ORDER BY date DESC LIMIT 20');
 
     return {
       period: 'last 3 months',
@@ -214,40 +241,31 @@ function buildFinancialContext() {
       expenses: { byCategory: expensesByCategory },
       subscriptions: { list: subscriptions, monthlyTotal: monthlySubTotal },
       budgetGoals: goals,
-      recentExpenses
+      recentExpenses,
     };
-  } catch (e) {
-    console.error('buildFinancialContext error:', e.message);
+  } catch (error) {
+    console.error('buildFinancialContext error:', error.message);
     return {
       period: 'last 3 months',
       income: { total: 0 },
       expenses: { byCategory: [] },
       subscriptions: { list: [], monthlyTotal: 0 },
       budgetGoals: [],
-      recentExpenses: []
+      recentExpenses: [],
     };
   }
 }
 
 router.post('/chat', async (req, res) => {
-  // Defensive: always send a response even on unexpected errors
   try {
-    const { message } = req.body;
-
-    if (!message || !message.trim()) {
-      return res.status(400).json({ error: 'message is required' });
-    }
-
+    const message = parseRequiredString('message', req.body?.message, { max: MAX_CHAT_MESSAGE_LENGTH });
     const apiKey = process.env.GEMINI_API_KEY;
+
     if (!apiKey || apiKey.trim() === '') {
-      return res.status(503).json({
-        error: 'Gemini API key not configured — add GEMINI_API_KEY to your .env file',
-        setup_url: 'https://aistudio.google.com/app/apikey'
-      });
+      throw new HttpError(503, 'Gemini API key not configured');
     }
 
     const context = buildFinancialContext();
-
     const prompt = `You are a sharp, friendly personal finance advisor. You have access to the user's real financial data below. Give specific, actionable advice. Be concise and direct. Use bullet points when listing multiple things. Format currency values in BRL (R$) unless the user asks otherwise. Do not make up data — only reason from what is provided.
 
 FINANCIAL DATA:
@@ -257,88 +275,88 @@ User question: ${message}`;
 
     const geminiBody = {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
+      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
     };
 
     let geminiRes;
     try {
-      geminiRes = await fetch(
+      geminiRes = await fetchWithTimeout(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey.trim()}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(geminiBody)
+          body: JSON.stringify(geminiBody),
         }
       );
-    } catch (networkErr) {
-      console.error('Gemini network error:', networkErr.message);
-      return res.status(502).json({ error: `Network error reaching Gemini API: ${networkErr.message}` });
+    } catch (error) {
+      if (error instanceof HttpError) {
+        throw error;
+      }
+
+      throw new HttpError(502, `Network error reaching Gemini API: ${error.message}`);
     }
 
     const rawBody = await geminiRes.text();
     console.log(`Gemini response status: ${geminiRes.status}`);
 
     if (!geminiRes.ok) {
-      console.error('Gemini API error:', rawBody);
-      let errorMsg;
+      let errorMessage;
+
       if (geminiRes.status === 429) {
-        // Extract retry delay if present
         let retryIn = '';
         try {
           const parsed = JSON.parse(rawBody);
-          const retryDetail = parsed?.error?.details?.find(d => d['@type']?.includes('RetryInfo'));
+          const retryDetail = parsed?.error?.details?.find((detail) => detail['@type']?.includes('RetryInfo'));
           if (retryDetail?.retryDelay) retryIn = ` retry in ${retryDetail.retryDelay}`;
-        } catch {}
-        errorMsg = `Rate limit reached for this API key (429 —${retryIn}). This usually means:\n• You've hit the free-tier per-minute limit — wait ~1 minute and try again\n• Or your project has 0 free quota — enable billing at console.cloud.google.com or create a new API key from a different Google project at aistudio.google.com/app/apikey`;
-      } else if (geminiRes.status === 403) {
-        errorMsg = 'API key is invalid or the Gemini API is not enabled for this project. Check your key at aistudio.google.com/app/apikey';
-      } else {
-        errorMsg = `Gemini API returned an error (${geminiRes.status}). ${rawBody.slice(0, 200)}`;
+        } catch {
+          // Ignore malformed retry metadata and fall back to the generic guidance below.
+        }
+
+        errorMessage = `Rate limit reached for this API key (429 —${retryIn}). Wait about a minute and try again, or check the key's Google project quota.`;
+        throw new HttpError(422, errorMessage);
       }
-      return res.status(422).json({ error: errorMsg });
+
+      if (geminiRes.status === 403) {
+        throw new HttpError(422, 'API key is invalid or the Gemini API is not enabled for this project.');
+      }
+
+      throw new HttpError(502, `Gemini API returned an error (${geminiRes.status}). ${rawBody.slice(0, 200)}`);
     }
 
     let geminiData;
     try {
       geminiData = JSON.parse(rawBody);
-    } catch (parseErr) {
-      console.error('Failed to parse Gemini JSON:', rawBody.slice(0, 200));
-      return res.status(502).json({ error: 'Received unexpected response from Gemini API.' });
+    } catch {
+      throw new HttpError(502, 'Received unexpected response from Gemini API.');
     }
 
     const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
-      console.error('Unexpected Gemini response structure:', JSON.stringify(geminiData).slice(0, 300));
-      return res.status(502).json({ error: 'Gemini returned an empty or unexpected response structure.' });
+      throw new HttpError(502, 'Gemini returned an empty or unexpected response structure.');
     }
 
     return res.json({ reply: text });
-
-  } catch (err) {
-    // Last-resort catch — always send JSON
-    console.error('AI route unhandled error:', err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: `Server error: ${err.message}` });
-    }
+  } catch (error) {
+    return handleRouteError(res, error, 'AI request failed');
   }
 });
 
 router.get('/ping', (req, res) => res.json({ status: 'ai router ok' }));
+
 router.post('/suggest-categories', async (req, res) => {
-  console.log('--- AI SUGGEST CATEGORIES REQUEST RECEIVED ---');
   try {
-    const { expenses } = req.body;
-
-    if (!expenses || !Array.isArray(expenses) || expenses.length === 0) {
-      return res.status(400).json({ error: 'expenses array is required' });
-    }
-
+    const rawExpenses = assertMaxItems(req.body?.expenses, MAX_AI_SUGGESTION_ITEMS, 'expenses');
     const apiKey = process.env.GEMINI_API_KEY;
+
     if (!apiKey || apiKey.trim() === '') {
-      return res.status(503).json({
-        error: 'Gemini API key not configured',
-      });
+      throw new HttpError(503, 'Gemini API key not configured');
     }
+
+    const expenses = rawExpenses.map((expense) => ({
+      id: parseRequiredString('id', expense?.id, { max: 80 }),
+      description: parseOptionalString(expense?.description, { max: 200, defaultValue: '' }),
+      amount: parsePositiveAmount('amount', expense?.amount, { allowZero: true }),
+    }));
 
     const historicalCategoryMap = getHistoricalCategoryMap();
     const suggestions = {};
@@ -348,45 +366,41 @@ router.post('/suggest-categories', async (req, res) => {
     let aiMatches = 0;
 
     for (const expense of expenses) {
-      const id = String(expense.id ?? '').trim();
-      const description = String(expense.description || '').trim();
-      const amount = Number(expense.amount) || 0;
+      const description = expense.description.trim();
       const cleanedDescription = cleanDescriptionForCategorization(description);
       const normalizedDescription = normalizeDescription(description);
 
-      if (!id) continue;
-
       if (!normalizedDescription) {
-        suggestions[id] = 'Other';
+        suggestions[expense.id] = 'Other';
         continue;
       }
 
       const historicalCategory = historicalCategoryMap.get(normalizedDescription);
       if (historicalCategory) {
-        suggestions[id] = historicalCategory;
+        suggestions[expense.id] = historicalCategory;
         historyMatches++;
         continue;
       }
 
       const existingGroup = groupedUnknownExpenses.get(normalizedDescription);
       if (existingGroup) {
-        existingGroup.ids.push(id);
+        existingGroup.ids.push(expense.id);
       } else {
         groupedUnknownExpenses.set(normalizedDescription, {
-          ids: [id],
+          ids: [expense.id],
           description,
           cleanedDescription: cleanedDescription || description || 'Imported transaction',
-          amount
+          amount: expense.amount,
         });
       }
     }
 
-    const aiQueue = [...groupedUnknownExpenses.values()].map(group => ({
+    const aiQueue = [...groupedUnknownExpenses.values()].map((group) => ({
       id: group.ids[0],
       ids: group.ids,
       description: group.description || 'Imported transaction',
       cleanedDescription: group.cleanedDescription || group.description || 'Imported transaction',
-      amount: group.amount
+      amount: group.amount,
     }));
 
     const chunks = chunkArray(aiQueue, AI_SUGGESTION_CHUNK_SIZE);
@@ -402,9 +416,9 @@ router.post('/suggest-categories', async (req, res) => {
             aiMatches++;
           }
         }
-      } catch (chunkError) {
-        console.error(`Suggest categories chunk ${index + 1} failed:`, chunkError);
-        warnings.push(`Chunk ${index + 1} failed: ${chunkError.message}`);
+      } catch (error) {
+        console.error(`Suggest categories chunk ${index + 1} failed:`, error);
+        warnings.push(`Chunk ${index + 1} failed: ${error.message}`);
       }
     }
 
@@ -417,12 +431,10 @@ router.post('/suggest-categories', async (req, res) => {
         historyMatches,
         aiMatches,
         warnings,
-      }
+      },
     });
-
-  } catch (err) {
-    console.error('Suggest categories error:', err);
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    return handleRouteError(res, error, 'Failed to suggest categories');
   }
 });
 

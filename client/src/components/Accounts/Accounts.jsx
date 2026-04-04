@@ -44,6 +44,8 @@ export default function Accounts() {
       }
       await load();
       close();
+    } catch (e) {
+      alert(e.message);
     } finally { setSaving(false); }
   };
 
@@ -53,9 +55,13 @@ export default function Accounts() {
 
   const confirmDelete = async () => {
     if (!deleteConfirm) return;
-    await api.delete(`/accounts/${deleteConfirm}`);
-    setItems((prev) => prev.filter((i) => i.id !== deleteConfirm));
-    setDeleteConfirm(null);
+    try {
+      await api.delete(`/accounts/${deleteConfirm}`);
+      setItems((prev) => prev.filter((i) => i.id !== deleteConfirm));
+      setDeleteConfirm(null);
+    } catch (e) {
+      alert(e.message);
+    }
   };
 
   return (

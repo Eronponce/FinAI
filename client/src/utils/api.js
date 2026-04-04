@@ -1,12 +1,26 @@
 // Central API wrapper — all calls go through Vite's proxy to the backend
 const BASE = '/api';
+const APP_REQUEST_HEADER = 'X-Finance-App-Request';
 
-async function request(method, path, body) {
+async function request(method, path, body, options = {}) {
+  const headers = {
+    Accept: 'application/json',
+    ...(options.headers || {}),
+  };
+
   const opts = {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
   };
-  if (body !== undefined) opts.body = JSON.stringify(body);
+
+  if (method !== 'GET') {
+    opts.headers[APP_REQUEST_HEADER] = '1';
+  }
+
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
 
   const res = await fetch(`${BASE}${path}`, opts);
 
@@ -33,8 +47,8 @@ async function request(method, path, body) {
 }
 
 export const api = {
-  get: (path) => request('GET', path),
-  post: (path, body) => request('POST', path, body),
-  put: (path, body) => request('PUT', path, body),
-  delete: (path, body) => request('DELETE', path, body),
+  get: (path, options) => request('GET', path, undefined, options),
+  post: (path, body, options) => request('POST', path, body, options),
+  put: (path, body, options) => request('PUT', path, body, options),
+  delete: (path, body, options) => request('DELETE', path, body, options),
 };

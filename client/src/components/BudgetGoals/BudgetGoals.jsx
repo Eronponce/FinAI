@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../../utils/api.js';
 import { useCurrency } from '../../hooks/useCurrency.jsx';
 import { CATEGORIES, getCategoryColor } from '../../utils/categories.js';
@@ -18,12 +18,12 @@ export default function BudgetGoals() {
   const thisMonth = String(now.getMonth() + 1);
   const thisYear  = String(now.getFullYear());
 
-  const load = () => Promise.all([
+  const load = useCallback(() => Promise.all([
     api.get('/goals'),
     api.get(`/expenses?month=${thisMonth}&year=${thisYear}`),
-  ]).then(([g, e]) => { setGoals(g); setExpenses(e); }).finally(() => setLoading(false));
+  ]).then(([g, e]) => { setGoals(g); setExpenses(e); }).finally(() => setLoading(false)), [thisMonth, thisYear]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const spentByCategory = {};
   expenses.forEach(e => {

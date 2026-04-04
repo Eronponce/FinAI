@@ -142,10 +142,10 @@ export function get(sql, params = []) {
 export function run(sql, params = []) {
   try {
     db.run(sql, params);
+    const changes = db.getRowsModified();
     persist();
     const row = get('SELECT last_insert_rowid() as id');
-    // Also get changes count via a workaround
-    return { lastInsertRowid: row?.id || null };
+    return { lastInsertRowid: row?.id || null, changes };
   } catch (e) {
     console.error('DB run() error:', e.message, sql);
     throw e;

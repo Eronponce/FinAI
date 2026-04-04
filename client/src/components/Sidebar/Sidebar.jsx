@@ -27,12 +27,6 @@ export default function Sidebar({ active, onNavigate, open, onClose }) {
           </button>
         </div>
 
-        <div className="sidebar-intro">
-          <span className="sidebar-chip">Private Wealth Desk</span>
-          <h2>Obsidian ledger, gold signal.</h2>
-          <p>Track every balance, trend, and recurring drag inside a local-first finance studio.</p>
-        </div>
-
         <nav className="sidebar-nav">
           {NAV.map(item => (
             <button
@@ -61,14 +55,6 @@ export default function Sidebar({ active, onNavigate, open, onClose }) {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="sidebar-footer-panel">
-            <div className="sidebar-footer-label">Mode</div>
-            <div className="sidebar-footer-value">Local-first</div>
-          </div>
-          <div className="sidebar-footer-panel">
-            <div className="sidebar-footer-label">Security</div>
-            <div className="sidebar-footer-value">Private ledger</div>
-          </div>
           <div className="sidebar-footer-meta">
             <div className="sidebar-footer-text">FinanceAI v1.0</div>
             <div className="sidebar-footer-sub">Designed for calm, deliberate money management</div>
