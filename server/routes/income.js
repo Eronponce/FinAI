@@ -48,6 +48,26 @@ router.post('/import', (req, res) => {
   res.json({ imported, skipped });
 });
 
+router.delete('/bulk', (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+  for (const id of ids) run('DELETE FROM income WHERE id=?', [parseInt(id)]);
+  res.json({ deleted: ids.length });
+});
+
+router.put('/bulk', (req, res) => {
+  const { ids, updates } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+  if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'updates object required' });
+  const allowed = ['recurrence', 'account_id', 'ignore_dashboard'];
+  const fields = Object.keys(updates).filter(k => allowed.includes(k));
+  if (fields.length === 0) return res.status(400).json({ error: 'no valid fields to update' });
+  const setClauses = fields.map(f => `${f}=?`).join(', ');
+  const values = fields.map(f => f === 'ignore_dashboard' ? (updates[f] ? 1 : 0) : (updates[f] ?? null));
+  for (const id of ids) run(`UPDATE income SET ${setClauses} WHERE id=?`, [...values, parseInt(id)]);
+  res.json({ updated: ids.length });
+});
+
 router.put('/:id', (req, res) => {
   const { source, amount, date, recurrence, notes, account_id, is_transfer, ignore_dashboard } = req.body;
   try {
