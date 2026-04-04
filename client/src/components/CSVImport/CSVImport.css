@@ -1,0 +1,26 @@
+.csv-dropzone {
+  border: 2px dashed var(--border-accent);
+  border-radius: var(--radius-xl);
+  padding: 64px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition);
+  background: var(--accent-gradient-soft);
+}
+.csv-dropzone:hover, .csv-dropzone-active {
+  border-color: var(--accent-1);
+  background: rgba(124,58,237,0.1);
+  transform: scale(1.01);
+}
+.csv-dropzone-icon { font-size: 3.5rem; margin-bottom: 16px; }
+.csv-dropzone-title { font-size: 1.2rem; font-weight: 600; margin-bottom: 8px; }
+.csv-dropzone-sub { color: var(--text-muted); font-size: 0.875rem; }
+.csv-error {
+  background: var(--red-soft);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: var(--red);
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  margin-top: 12px;
+}
