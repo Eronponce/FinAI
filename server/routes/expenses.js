@@ -1,6 +1,19 @@
 import express from 'express';
 import { all, get, run } from '../db.js';
 const router = express.Router();
+const BULK_CATEGORY_SET = new Set([
+  'Food',
+  'Housing',
+  'Transport',
+  'Health',
+  'Entertainment',
+  'Shopping',
+  'Subscriptions',
+  'Education',
+  'Investments',
+  'Transfer',
+  'Other',
+]);
 
 router.get('/', (req, res) => {
   const { month, year, category } = req.query;
@@ -70,6 +83,27 @@ router.put('/bulk', (req, res) => {
   const values = fields.map(f => f === 'ignore_dashboard' ? (updates[f] ? 1 : 0) : (updates[f] ?? null));
   for (const id of ids) run(`UPDATE expenses SET ${setClauses} WHERE id=?`, [...values, parseInt(id)]);
   res.json({ updated: ids.length });
+});
+
+router.put('/bulk/categories', (req, res) => {
+  const { suggestions } = req.body;
+  if (!suggestions || typeof suggestions !== 'object') {
+    return res.status(400).json({ error: 'suggestions object required' });
+  }
+
+  const entries = Object.entries(suggestions)
+    .map(([id, category]) => ({ id: parseInt(id), category: String(category || '').trim() }))
+    .filter(entry => Number.isInteger(entry.id) && BULK_CATEGORY_SET.has(entry.category));
+
+  if (entries.length === 0) {
+    return res.status(400).json({ error: 'no valid category updates provided' });
+  }
+
+  for (const entry of entries) {
+    run('UPDATE expenses SET category=? WHERE id=?', [entry.category, entry.id]);
+  }
+
+  res.json({ updated: entries.length });
 });
 
 router.put('/:id', (req, res) => {

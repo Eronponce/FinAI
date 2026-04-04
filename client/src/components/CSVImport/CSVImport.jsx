@@ -3,19 +3,17 @@ import Papa from 'papaparse';
 import { parseNubankCSV } from '../../utils/csvNubank.js';
 import { CATEGORIES } from '../../utils/categories.js';
 import { api } from '../../utils/api.js';
-import { useCurrency } from '../../hooks/useCurrency.jsx';
 import './CSVImport.css';
 
 export default function CSVImport() {
-  const { fmt } = useCurrency();
   const [stage, setStage]     = useState('upload'); // upload | preview | done
-  const [parsed, setParsed]   = useState([]);
   const [edited, setEdited]   = useState([]);
   const [dragging, setDragging] = useState(false);
   const [result, setResult]   = useState(null);
   const [importing, setImporting] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError]     = useState('');
+  const [aiMeta, setAiMeta]   = useState(null);
   const [accounts, setAccounts] = useState([]);
   const fileRef = useRef();
 
@@ -25,6 +23,7 @@ export default function CSVImport() {
 
   const processFile = (file) => {
     setError('');
+    setAiMeta(null);
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -32,7 +31,6 @@ export default function CSVImport() {
         if (!res.data?.length) { setError('CSV appears to be empty.'); return; }
         const rows = parseNubankCSV(res.data);
         if (!rows.length) { setError('Could not detect valid rows. Make sure this is a Nubank CSV export.'); return; }
-        setParsed(rows);
         setEdited(rows.map((r, i) => ({ ...r, _id: i })));
         setStage('preview');
       },
@@ -83,18 +81,32 @@ export default function CSVImport() {
   };
 
   const suggestCategories = async () => {
-    if (edited.length === 0) return;
+    const expensesToSuggest = edited
+      .filter(row => row.type === 'expense' && !row.is_transfer)
+      .map(row => ({ id: row._id, description: row.description, amount: row.amount }));
+
+    if (expensesToSuggest.length === 0) {
+      setError('There are no expense rows available for AI categorization.');
+      setAiMeta(null);
+      return;
+    }
+
     setSuggesting(true);
     setError('');
+    setAiMeta(null);
     try {
-      const expensesToSuggest = edited.map(r => ({ id: r._id, description: r.description, amount: r.amount }));
       const res = await api.post('/ai/suggest-categories', { expenses: expensesToSuggest });
-      
+      setAiMeta(res.meta || null);
+
       if (res.suggestions) {
         setEdited(prev => prev.map(r => {
           const suggested = res.suggestions[r._id];
           return suggested ? { ...r, category: suggested } : r;
         }));
+      }
+
+      if ((res.meta?.warnings || []).length > 0) {
+        setError(`AI warning: ${res.meta.warnings[0]}`);
       }
     } catch (e) {
       setError(`AI Error: ${e.message}`);
@@ -103,7 +115,13 @@ export default function CSVImport() {
     }
   };
 
-  const reset = () => { setStage('upload'); setParsed([]); setEdited([]); setResult(null); setError(''); };
+  const reset = () => {
+    setStage('upload');
+    setEdited([]);
+    setResult(null);
+    setError('');
+    setAiMeta(null);
+  };
 
   return (
     <div className="page-content">
@@ -158,15 +176,18 @@ export default function CSVImport() {
                   onClick={suggestCategories} 
                   disabled={suggesting || importing}
                 >
-                  {suggesting ? <span className="spinner" style={{width:14,height:14}} /> : '✨ Suggest Categories'}
+                  {suggesting ? <span className="spinner" style={{width:14,height:14}} /> : aiMeta ? '✨ Suggest Again' : '✨ Suggest Categories'}
                 </button>
                 <button id="confirm-import-btn" className="btn btn-primary btn-sm" onClick={doImport} disabled={importing || suggesting || edited.length === 0}>
                   {importing ? <span className="spinner" /> : `Import ${edited.length} rows`}
                 </button>
               </div>
             </div>
-            <div style={{padding:'12px 20px', borderBottom:'1px solid var(--border)', fontSize:'0.82rem', color:'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-              <span>Review types and categories before importing. Pink ones are expenses, green are income. You can remove any row.</span>
+            <div style={{padding:'12px 20px', borderBottom:'1px solid var(--border)', fontSize:'0.82rem', color:'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap:'wrap', gap:12}}>
+              <span>
+                Review types and categories before importing. Pink ones are expenses, green are income. You can remove any row.
+                {aiMeta ? ` AI filled ${aiMeta.resolved}/${aiMeta.requested} expense categories${aiMeta.historyMatches ? `, including ${aiMeta.historyMatches} from your past matches` : ''}.` : ''}
+              </span>
               <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
                 <span style={{fontWeight: 600}}>Set all to:</span>
                 <select 
