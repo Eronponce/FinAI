@@ -17,6 +17,7 @@ export default function Expenses() {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [filterCat, setFilterCat] = useState('');
   const [search, setSearch]     = useState('');
+  const [filterMonth, setFilterMonth] = useState('');
 
   const load = () => {
     Promise.all([api.get('/expenses'), api.get('/accounts')]).then(([exp, acc]) => {
@@ -29,7 +30,8 @@ export default function Expenses() {
   const filtered = items.filter(e => {
     const matchCat = !filterCat || e.category === filterCat;
     const matchSearch = !search || e.description.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
+    const matchMonth = !filterMonth || e.date.startsWith(filterMonth);
+    return matchCat && matchSearch && matchMonth;
   });
 
   const total = filtered.reduce((s, e) => s + e.amount, 0);
@@ -105,13 +107,15 @@ export default function Expenses() {
         <div className="card-body" style={{display:'flex', gap:12, flexWrap:'wrap', alignItems:'center'}}>
           <input className="form-input" style={{maxWidth:280}} placeholder="🔍 Search expenses…"
             value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="form-input" type="month" style={{maxWidth:200}} value={filterMonth}
+            onChange={e => setFilterMonth(e.target.value)} />
           <select className="form-select" style={{maxWidth:200}} value={filterCat}
             onChange={e => setFilterCat(e.target.value)}>
             <option value="">All Categories</option>
             {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
           </select>
-          {(filterCat || search) && (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setFilterCat(''); setSearch(''); }}>Clear</button>
+          {(filterCat || search || filterMonth) && (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setFilterCat(''); setSearch(''); setFilterMonth(''); }}>Clear</button>
           )}
           <div style={{marginLeft:'auto'}} className="flex items-center gap-2">
             <span className="text-muted" style={{fontSize:'0.8rem'}}>{filtered.length} entries</span>
