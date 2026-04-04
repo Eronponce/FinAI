@@ -18,6 +18,15 @@ export default function Income() {
   const [search, setSearch]     = useState('');
   const [filterMonth, setFilterMonth] = useState('');
 
+  // Selection state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkForm, setBulkForm] = useState({ recurrence: '', account_id: '', ignore_dashboard: '' });
+  const [bulkFields, setBulkFields] = useState({ recurrence: false, account_id: false, ignore_dashboard: false });
+  const [bulkSaving, setBulkSaving] = useState(false);
+
   const load = () => {
     Promise.all([api.get('/income'), api.get('/accounts')]).then(([inc, acc]) => {
       setItems(inc);
@@ -31,7 +40,7 @@ export default function Income() {
     if (i.recurrence === 'yearly')  return s + i.amount / 12;
     if (i.recurrence === 'weekly')  return s + i.amount * 4.33;
     if (i.recurrence === 'bi-weekly') return s + i.amount * 2.17;
-    return s; // one-time not counted in monthly
+    return s;
   }, 0);
 
   const totalAllTime = items.reduce((s, i) => s + i.amount, 0);
@@ -57,7 +66,7 @@ export default function Income() {
     try {
       if (editing) {
         await api.put(`/income/${editing.id}`, form);
-        
+
         if (form.is_transfer && !editing.is_transfer && form.from_account_id) {
           const toAccountName = accounts.find(a => a.id === form.account_id)?.name || 'Account';
           await api.post('/expenses', {
@@ -73,7 +82,7 @@ export default function Income() {
         }
       } else {
         await api.post('/income', form);
-        
+
         if (form.is_transfer && form.from_account_id) {
           const toAccountName = accounts.find(a => a.id === form.account_id)?.name || 'Account';
           await api.post('/expenses', {
@@ -104,6 +113,58 @@ export default function Income() {
     setDeleteConfirm(null);
   };
 
+  // Selection helpers
+  const toggleSelectMode = () => {
+    setSelectMode(v => !v);
+    setSelected(new Set());
+  };
+
+  const toggleItem = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selected.size === filtered.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map(i => i.id)));
+    }
+  };
+
+  const confirmBulkDelete = async () => {
+    await api.delete('/income/bulk', { ids: [...selected] });
+    setItems(prev => prev.filter(i => !selected.has(i.id)));
+    setSelected(new Set());
+    setBulkDeleteConfirm(false);
+  };
+
+  const openBulkEdit = () => {
+    setBulkForm({ recurrence: '', account_id: '', ignore_dashboard: '' });
+    setBulkFields({ recurrence: false, account_id: false, ignore_dashboard: false });
+    setShowBulkEdit(true);
+  };
+
+  const confirmBulkEdit = async () => {
+    const updates = {};
+    if (bulkFields.recurrence && bulkForm.recurrence) updates.recurrence = bulkForm.recurrence;
+    if (bulkFields.account_id) updates.account_id = bulkForm.account_id ? parseInt(bulkForm.account_id) : null;
+    if (bulkFields.ignore_dashboard && bulkForm.ignore_dashboard !== '') updates.ignore_dashboard = bulkForm.ignore_dashboard === 'true';
+    if (Object.keys(updates).length === 0) return;
+    setBulkSaving(true);
+    try {
+      await api.put('/income/bulk', { ids: [...selected], updates });
+      await load();
+      setSelected(new Set());
+      setShowBulkEdit(false);
+    } catch (e) {
+      alert('Failed to update: ' + e.message);
+    } finally { setBulkSaving(false); }
+  };
+
   return (
     <div className="page-content">
       <div className="page-header flex justify-between items-center">
@@ -111,7 +172,12 @@ export default function Income() {
           <h1>Income</h1>
           <p>Track your income sources</p>
         </div>
-        <button className="btn btn-primary" onClick={openAdd} id="add-income-btn">+ Add Income</button>
+        <div className="flex gap-2">
+          <button className={`btn ${selectMode ? 'btn-secondary' : 'btn-ghost'} btn-sm`} onClick={toggleSelectMode}>
+            {selectMode ? 'Cancel' : 'Select'}
+          </button>
+          <button className="btn btn-primary" onClick={openAdd} id="add-income-btn">+ Add Income</button>
+        </div>
       </div>
 
       <div className="grid-3 mb-4">
@@ -161,11 +227,29 @@ export default function Income() {
           ) : (
             <table>
               <thead>
-                <tr><th>Source</th><th>Account</th><th>Date</th><th>Recurrence</th><th>Notes</th><th style={{textAlign:'right'}}>Amount</th><th></th></tr>
+                <tr>
+                  {selectMode && (
+                    <th style={{width:36}}>
+                      <input type="checkbox" style={{width:'auto',margin:0}}
+                        checked={filtered.length > 0 && selected.size === filtered.length}
+                        onChange={toggleAll} />
+                    </th>
+                  )}
+                  <th>Source</th><th>Account</th><th>Date</th><th>Recurrence</th><th>Notes</th><th style={{textAlign:'right'}}>Amount</th><th></th>
+                </tr>
               </thead>
               <tbody>
                 {filtered.map(item => (
-                  <tr key={item.id}>
+                  <tr key={item.id} style={selected.has(item.id) ? {background:'var(--blue-soft)'} : undefined}
+                    onClick={selectMode ? () => toggleItem(item.id) : undefined}
+                    className={selectMode ? 'cursor-pointer' : undefined}>
+                    {selectMode && (
+                      <td onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" style={{width:'auto',margin:0}}
+                          checked={selected.has(item.id)}
+                          onChange={() => toggleItem(item.id)} />
+                      </td>
+                    )}
                     <td>
                       <strong>{item.source}</strong>
                       {!!item.is_transfer ? <span className="badge badge-blue" style={{marginLeft: 6, fontSize: '0.7rem'}}>Transfer</span> : null}
@@ -177,10 +261,12 @@ export default function Income() {
                     <td className="text-muted" style={{maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.notes||'-'}</td>
                     <td style={{textAlign:'right'}} className="text-green"><strong>{fmt(item.amount)}</strong></td>
                     <td>
-                      <div className="flex gap-2">
-                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => openEdit(item)}>✏️</button>
-                        <button className="btn btn-danger btn-sm btn-icon" onClick={() => remove(item.id)}>🗑️</button>
-                      </div>
+                      {!selectMode && (
+                        <div className="flex gap-2">
+                          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => openEdit(item)}>✏️</button>
+                          <button className="btn btn-danger btn-sm btn-icon" onClick={() => remove(item.id)}>🗑️</button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -189,6 +275,20 @@ export default function Income() {
           )}
         </div>
       </div>
+
+      {/* Bulk action bar */}
+      {selectMode && selected.size > 0 && (
+        <div style={{
+          position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)',
+          background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:12,
+          boxShadow:'0 4px 24px rgba(0,0,0,0.18)', padding:'12px 20px',
+          display:'flex', alignItems:'center', gap:12, zIndex:200, whiteSpace:'nowrap'
+        }}>
+          <span style={{fontWeight:600}}>{selected.size} selected</span>
+          <button className="btn btn-ghost btn-sm" onClick={openBulkEdit}>Edit Fields</button>
+          <button className="btn btn-danger btn-sm" onClick={() => setBulkDeleteConfirm(true)}>Delete Selected</button>
+        </div>
+      )}
 
       {deleteConfirm && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setDeleteConfirm(null)}>
@@ -203,6 +303,83 @@ export default function Income() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>Cancel</button>
               <button className="btn btn-danger" onClick={confirmDelete}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkDeleteConfirm && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setBulkDeleteConfirm(false)}>
+          <div className="modal" style={{maxWidth: '400px'}}>
+            <div className="modal-header">
+              <span className="modal-title">Delete {selected.size} Income Entries</span>
+              <button className="btn btn-ghost btn-icon" onClick={() => setBulkDeleteConfirm(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete <strong>{selected.size}</strong> income entr{selected.size !== 1 ? 'ies' : 'y'}? This cannot be undone.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setBulkDeleteConfirm(false)}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmBulkDelete}>Delete All</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkEdit && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowBulkEdit(false)}>
+          <div className="modal" style={{maxWidth: '480px'}}>
+            <div className="modal-header">
+              <span className="modal-title">Edit {selected.size} Income Entries</span>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowBulkEdit(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{color:'var(--text-muted)', fontSize:'0.85rem', marginBottom:16}}>Check a field to apply that change to all selected entries.</p>
+
+              <div className="form-group" style={{display:'flex', alignItems:'center', gap:8}}>
+                <input type="checkbox" style={{width:'auto',margin:0}} checked={bulkFields.recurrence}
+                  onChange={e => setBulkFields(f=>({...f, recurrence: e.target.checked}))} />
+                <label className="form-label" style={{margin:0, flex:1}}>Recurrence</label>
+              </div>
+              {bulkFields.recurrence && (
+                <select className="form-select mb-3" value={bulkForm.recurrence}
+                  onChange={e => setBulkForm(f=>({...f, recurrence: e.target.value}))}>
+                  <option value="">-- Select --</option>
+                  {RECURRENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              )}
+
+              <div className="form-group" style={{display:'flex', alignItems:'center', gap:8}}>
+                <input type="checkbox" style={{width:'auto',margin:0}} checked={bulkFields.account_id}
+                  onChange={e => setBulkFields(f=>({...f, account_id: e.target.checked}))} />
+                <label className="form-label" style={{margin:0, flex:1}}>Account</label>
+              </div>
+              {bulkFields.account_id && (
+                <select className="form-select mb-3" value={bulkForm.account_id}
+                  onChange={e => setBulkForm(f=>({...f, account_id: e.target.value}))}>
+                  <option value="">-- No Account --</option>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              )}
+
+              <div className="form-group" style={{display:'flex', alignItems:'center', gap:8}}>
+                <input type="checkbox" style={{width:'auto',margin:0}} checked={bulkFields.ignore_dashboard}
+                  onChange={e => setBulkFields(f=>({...f, ignore_dashboard: e.target.checked}))} />
+                <label className="form-label" style={{margin:0, flex:1}}>Dashboard visibility</label>
+              </div>
+              {bulkFields.ignore_dashboard && (
+                <select className="form-select mb-3" value={bulkForm.ignore_dashboard}
+                  onChange={e => setBulkForm(f=>({...f, ignore_dashboard: e.target.value}))}>
+                  <option value="false">Show on Dashboard</option>
+                  <option value="true">Hide from Dashboard</option>
+                </select>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowBulkEdit(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmBulkEdit} disabled={bulkSaving || !Object.values(bulkFields).some(Boolean)}>
+                {bulkSaving ? <span className="spinner" /> : `Apply to ${selected.size}`}
+              </button>
             </div>
           </div>
         </div>
@@ -256,7 +433,7 @@ export default function Income() {
                   onChange={e => setForm(f=>({...f, notes:e.target.value}))} />
               </div>
               <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '1rem' }}>
-                <input type="checkbox" id="income-is-transfer" checked={!!form.is_transfer} 
+                <input type="checkbox" id="income-is-transfer" checked={!!form.is_transfer}
                   onChange={e => setForm(f=>({...f, is_transfer: e.target.checked}))} style={{ width: 'auto', margin: 0 }} />
                 <label htmlFor="income-is-transfer" style={{ margin: 0, fontWeight: 'bold', cursor: 'pointer', color: 'var(--blue)' }} className="form-label">
                   🔄 Mark as Transfer between accounts
@@ -265,7 +442,7 @@ export default function Income() {
 
               {!form.is_transfer && (
                 <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '0.5rem' }}>
-                  <input type="checkbox" id="income-ignore-dashboard" checked={!!form.ignore_dashboard} 
+                  <input type="checkbox" id="income-ignore-dashboard" checked={!!form.ignore_dashboard}
                     onChange={e => setForm(f=>({...f, ignore_dashboard: e.target.checked}))} style={{ width: 'auto', margin: 0 }} />
                   <label htmlFor="income-ignore-dashboard" style={{ margin: 0, fontWeight: 'normal', cursor: 'pointer' }} className="form-label">
                     Hide from Dashboard statistics
