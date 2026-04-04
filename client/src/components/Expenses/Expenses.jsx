@@ -27,9 +27,11 @@ export default function Expenses() {
   const [bulkForm, setBulkForm] = useState({ category: '', payment_method: '', account_id: '', ignore_dashboard: '' });
   const [bulkFields, setBulkFields] = useState({ category: false, payment_method: false, account_id: false, ignore_dashboard: false });
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkSuggesting, setBulkSuggesting] = useState(false);
+  const [bulkAiMessage, setBulkAiMessage] = useState('');
 
   const load = () => {
-    Promise.all([api.get('/expenses'), api.get('/accounts')]).then(([exp, acc]) => {
+    return Promise.all([api.get('/expenses'), api.get('/accounts')]).then(([exp, acc]) => {
       setItems(exp);
       setAccounts(acc);
     }).finally(() => setLoading(false));
@@ -42,6 +44,8 @@ export default function Expenses() {
     const matchMonth = !filterMonth || e.date.startsWith(filterMonth);
     return matchCat && matchSearch && matchMonth;
   });
+  const selectedItems = items.filter(item => selected.has(item.id));
+  const selectedAiEligible = selectedItems.filter(item => !item.is_transfer);
 
   const total = filtered.reduce((s, e) => s + e.amount, 0);
 
@@ -107,6 +111,7 @@ export default function Expenses() {
   const toggleSelectMode = () => {
     setSelectMode(v => !v);
     setSelected(new Set());
+    setBulkAiMessage('');
   };
 
   const toggleItem = (id) => {
@@ -133,6 +138,7 @@ export default function Expenses() {
   };
 
   const openBulkEdit = () => {
+    setBulkAiMessage('');
     setBulkForm({ category: '', payment_method: '', account_id: '', ignore_dashboard: '' });
     setBulkFields({ category: false, payment_method: false, account_id: false, ignore_dashboard: false });
     setShowBulkEdit(true);
@@ -154,6 +160,57 @@ export default function Expenses() {
     } catch (e) {
       alert('Failed to update: ' + e.message);
     } finally { setBulkSaving(false); }
+  };
+
+  const rerunAiForSelected = async () => {
+    if (selectedAiEligible.length === 0) {
+      setBulkAiMessage('AI can only re-categorize non-transfer expenses.');
+      return;
+    }
+
+    setBulkSuggesting(true);
+    setBulkAiMessage('');
+
+    try {
+      const res = await api.post('/ai/suggest-categories', {
+        expenses: selectedAiEligible.map(item => ({
+          id: item.id,
+          description: item.description,
+          amount: item.amount,
+        }))
+      });
+
+      const suggestions = Object.entries(res.suggestions || {});
+
+      if (suggestions.length === 0) {
+        const warning = res.meta?.warnings?.[0];
+        setBulkAiMessage(warning ? `AI warning: ${warning}` : 'AI could not confidently update the selected expenses.');
+        return;
+      }
+
+      await api.put('/expenses/bulk/categories', {
+        suggestions: Object.fromEntries(suggestions)
+      });
+
+      await load();
+
+      const skippedTransfers = selectedItems.length - selectedAiEligible.length;
+      const unresolved = res.meta?.unresolved || 0;
+      const parts = [`AI updated ${suggestions.length} expense${suggestions.length === 1 ? '' : 's'}.`];
+
+      if (unresolved > 0) {
+        parts.push(`${unresolved} kept their current category.`);
+      }
+      if (skippedTransfers > 0) {
+        parts.push(`${skippedTransfers} transfer${skippedTransfers === 1 ? '' : 's'} skipped.`);
+      }
+
+      setBulkAiMessage(parts.join(' '));
+    } catch (e) {
+      setBulkAiMessage(`AI Error: ${e.message}`);
+    } finally {
+      setBulkSuggesting(false);
+    }
   };
 
   const pmLabel = (v) => PAYMENT_METHODS.find(p => p.value === v)?.label || v;
@@ -192,6 +249,11 @@ export default function Expenses() {
       </div>
 
       <div className="card">
+        {bulkAiMessage && (
+          <div style={{padding:'12px 16px', borderBottom:'1px solid var(--border)', fontSize:'0.82rem', color:'var(--text-secondary)'}}>
+            {bulkAiMessage}
+          </div>
+        )}
         <div className="table-wrap">
           {loading ? (
             <div className="empty-state"><div className="spinner" /></div>
@@ -237,8 +299,8 @@ export default function Expenses() {
                       <span className="badge badge-muted">
                         {CATEGORIES.find(c=>c.id===item.category)?.icon} {item.category}
                       </span>
-                      {!!item.is_transfer ? <span className="badge badge-blue" style={{marginLeft: 4, fontSize: '0.7rem'}}>Transfer</span> : null}
-                      {!!item.ignore_dashboard && !item.is_transfer ? <span className="badge badge-muted" style={{marginLeft: 4, fontSize: '0.7rem'}}>Hidden</span> : null}
+                      {item.is_transfer ? <span className="badge badge-blue" style={{marginLeft: 4, fontSize: '0.7rem'}}>Transfer</span> : null}
+                      {item.ignore_dashboard && !item.is_transfer ? <span className="badge badge-muted" style={{marginLeft: 4, fontSize: '0.7rem'}}>Hidden</span> : null}
                     </td>
                     <td className="text-muted" style={{fontSize:'0.8rem'}}>{pmLabel(item.payment_method)}</td>
                     <td style={{textAlign:'right'}} className="text-red"><strong>{fmt(item.amount)}</strong></td>
@@ -264,9 +326,12 @@ export default function Expenses() {
           position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)',
           background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:12,
           boxShadow:'0 4px 24px rgba(0,0,0,0.18)', padding:'12px 20px',
-          display:'flex', alignItems:'center', gap:12, zIndex:200, whiteSpace:'nowrap'
+          display:'flex', alignItems:'center', justifyContent:'center', gap:12, zIndex:200, flexWrap:'wrap'
         }}>
           <span style={{fontWeight:600}}>{selected.size} selected</span>
+          <button className="btn btn-primary btn-sm" onClick={rerunAiForSelected} disabled={bulkSuggesting || bulkSaving}>
+            {bulkSuggesting ? <span className="spinner" style={{width:14,height:14}} /> : 'Run AI Again'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={openBulkEdit}>Edit Fields</button>
           <button className="btn btn-danger btn-sm" onClick={() => setBulkDeleteConfirm(true)}>Delete Selected</button>
         </div>

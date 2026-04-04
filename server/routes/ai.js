@@ -2,6 +2,189 @@ import express from 'express';
 import { all, get } from '../db.js';
 const router = express.Router();
 
+const AI_CATEGORY_LIST = [
+  'Food',
+  'Housing',
+  'Transport',
+  'Health',
+  'Entertainment',
+  'Shopping',
+  'Subscriptions',
+  'Education',
+  'Investments',
+  'Other',
+];
+
+const AI_CATEGORY_SET = new Set(AI_CATEGORY_LIST);
+const AI_CATEGORY_MAP = new Map(AI_CATEGORY_LIST.map(category => [category.toLowerCase(), category]));
+const AI_SUGGESTION_CHUNK_SIZE = 30;
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function sanitizeSuggestedCategory(value) {
+  if (!value) return null;
+  const cleaned = String(value).trim();
+  if (AI_CATEGORY_SET.has(cleaned)) return cleaned;
+  return AI_CATEGORY_MAP.get(cleaned.toLowerCase()) || null;
+}
+
+function cleanDescriptionForCategorization(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, ' ')
+    .replace(/^(compra no (debito|débito|credito|crédito)|compra)\s*-\s*/i, '')
+    .replace(/^(pagamento (de )?fatura|pagamento boleto)\s*-\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeDescription(value) {
+  return cleanDescriptionForCategorization(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b\d{2,}\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseAiJsonObject(text) {
+  const cleaned = String(text || '')
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      throw new Error('AI returned unexpected JSON shape');
+    }
+    return parsed;
+  } catch (initialError) {
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw initialError;
+    }
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      throw new Error('AI returned unexpected JSON shape');
+    }
+    return parsed;
+  }
+}
+
+function getHistoricalCategoryMap() {
+  const historyRows = all(`
+    SELECT description, category, COUNT(*) as count
+    FROM expenses
+    WHERE description IS NOT NULL AND category IS NOT NULL
+    GROUP BY description, category
+    ORDER BY count DESC
+  `);
+
+  const bestCategoryByKey = new Map();
+
+  for (const row of historyRows) {
+    const key = normalizeDescription(row.description);
+    const category = sanitizeSuggestedCategory(row.category);
+    const count = Number(row.count) || 0;
+
+    if (!key || !category || category === 'Other') continue;
+
+    const current = bestCategoryByKey.get(key);
+    if (!current || count > current.count) {
+      bestCategoryByKey.set(key, { category, count });
+    }
+  }
+
+  return new Map(
+    [...bestCategoryByKey.entries()].map(([key, value]) => [key, value.category])
+  );
+}
+
+function buildCategoryPrompt(entries) {
+  return `You categorize bank transactions for a personal finance app.
+Choose exactly one category from this list:
+${AI_CATEGORY_LIST.join(', ')}.
+
+Rules:
+- Return ONLY a JSON object.
+- Keep every transaction ID exactly as provided.
+- Use the category names exactly as written.
+- Ignore bank prefixes like "Compra no débito -" and random identifiers.
+- If the description is still unclear, use "Other".
+
+Category guide:
+- Food: restaurants, grocery stores, cafes, delivery, bakeries, markets.
+- Housing: rent, utilities, home services, internet, phone bills, maintenance.
+- Transport: ride apps, fuel, parking, tolls, transit, vehicle services.
+- Health: pharmacies, hospitals, dentists, labs, clinics, gyms with a medical focus.
+- Entertainment: bars, movies, games, events, hobbies, leisure.
+- Shopping: retail, ecommerce, clothes, electronics, home goods, marketplaces.
+- Subscriptions: recurring software, apps, streaming, memberships.
+- Education: courses, books, tuition, schools, training.
+- Investments: brokerages, crypto, stocks, retirement contributions.
+
+Transactions:
+${entries.map(entry => `ID: ${entry.id}\nOriginal: ${entry.description}\nCleaned: ${entry.cleanedDescription}\nAmount: ${entry.amount}`).join('\n\n')}
+
+Example output:
+{
+  "${entries[0]?.id ?? '0'}": "Food"
+}`;
+}
+
+async function requestGeminiCategoryChunk(entries, apiKey) {
+  const geminiBody = {
+    contents: [{ role: 'user', parts: [{ text: buildCategoryPrompt(entries) }] }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 1024,
+      responseMimeType: 'application/json'
+    }
+  };
+
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey.trim()}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(geminiBody)
+    }
+  );
+
+  if (!geminiRes.ok) {
+    const rawError = await geminiRes.text();
+    throw new Error(`Gemini API error (${geminiRes.status}): ${rawError.slice(0, 200)}`);
+  }
+
+  const geminiData = await geminiRes.json();
+  const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!text) {
+    throw new Error('Empty response from AI');
+  }
+
+  const parsed = parseAiJsonObject(text);
+  const suggestions = {};
+
+  for (const entry of entries) {
+    const category = sanitizeSuggestedCategory(parsed[entry.id]);
+    if (category) {
+      suggestions[entry.id] = category;
+    }
+  }
+
+  return suggestions;
+}
+
 function buildFinancialContext() {
   try {
     const expensesByCategory = all(`
@@ -157,75 +340,85 @@ router.post('/suggest-categories', async (req, res) => {
       });
     }
 
-    const CATEGORIES_LIST = [
-      'Food', 'Housing', 'Transport', 'Health', 'Entertainment',
-      'Shopping', 'Subscriptions', 'Education', 'Investments', 'Other'
-    ];
+    const historicalCategoryMap = getHistoricalCategoryMap();
+    const suggestions = {};
+    const groupedUnknownExpenses = new Map();
+    const warnings = [];
+    let historyMatches = 0;
+    let aiMatches = 0;
 
-    const prompt = `You are a personal finance assistant. Given a list of expense descriptions, suggest the most appropriate category from the following list:
-${CATEGORIES_LIST.join(', ')}.
+    for (const expense of expenses) {
+      const id = String(expense.id ?? '').trim();
+      const description = String(expense.description || '').trim();
+      const amount = Number(expense.amount) || 0;
+      const cleanedDescription = cleanDescriptionForCategorization(description);
+      const normalizedDescription = normalizeDescription(description);
 
-Return ONLY a JSON object where keys are the expense IDs and values are the suggested category names.
+      if (!id) continue;
 
-Expenses:
-${expenses.map(e => `ID: ${e.id}, Description: ${e.description}, Amount: ${e.amount}`).join('\n')}
-
-Example Output:
-{
-  "0": "Food",
-  "1": "Transport"
-}`;
-
-    const geminiBody = {
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 2048,
-        responseMimeType: "application/json"
+      if (!normalizedDescription) {
+        suggestions[id] = 'Other';
+        continue;
       }
-    };
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey.trim()}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiBody)
+      const historicalCategory = historicalCategoryMap.get(normalizedDescription);
+      if (historicalCategory) {
+        suggestions[id] = historicalCategory;
+        historyMatches++;
+        continue;
       }
-    );
 
-    if (!geminiRes.ok) {
-      const rawError = await geminiRes.text();
-      console.error('Gemini API error in suggest-categories:', rawError);
-      return res.status(geminiRes.status).json({ error: 'Failed to get suggestions from AI' });
+      const existingGroup = groupedUnknownExpenses.get(normalizedDescription);
+      if (existingGroup) {
+        existingGroup.ids.push(id);
+      } else {
+        groupedUnknownExpenses.set(normalizedDescription, {
+          ids: [id],
+          description,
+          cleanedDescription: cleanedDescription || description || 'Imported transaction',
+          amount
+        });
+      }
     }
 
-    const geminiData = await geminiRes.json();
-    const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    const aiQueue = [...groupedUnknownExpenses.values()].map(group => ({
+      id: group.ids[0],
+      ids: group.ids,
+      description: group.description || 'Imported transaction',
+      cleanedDescription: group.cleanedDescription || group.description || 'Imported transaction',
+      amount: group.amount
+    }));
 
-    if (!text) {
-      return res.status(502).json({ error: 'Empty response from AI' });
-    }
+    const chunks = chunkArray(aiQueue, AI_SUGGESTION_CHUNK_SIZE);
 
-    try {
-      let cleanedText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      let suggestions;
+    for (const [index, chunk] of chunks.entries()) {
       try {
-        suggestions = JSON.parse(cleanedText);
-      } catch (e) {
-        // Fallback: try to extract the JSON object with regex
-        const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          suggestions = JSON.parse(jsonMatch[0]);
-        } else {
-          throw e; // throw again if no match
+        const chunkSuggestions = await requestGeminiCategoryChunk(chunk, apiKey);
+        for (const entry of chunk) {
+          const category = chunkSuggestions[entry.id];
+          if (!category) continue;
+          for (const originalId of entry.ids) {
+            suggestions[originalId] = category;
+            aiMatches++;
+          }
         }
+      } catch (chunkError) {
+        console.error(`Suggest categories chunk ${index + 1} failed:`, chunkError);
+        warnings.push(`Chunk ${index + 1} failed: ${chunkError.message}`);
       }
-      return res.json({ suggestions });
-    } catch (parseErr) {
-      console.error('Failed to parse AI JSON. Raw text:', text);
-      return res.status(502).json({ error: 'AI returned invalid JSON format' });
     }
+
+    return res.json({
+      suggestions,
+      meta: {
+        requested: expenses.length,
+        resolved: Object.keys(suggestions).length,
+        unresolved: Math.max(expenses.length - Object.keys(suggestions).length, 0),
+        historyMatches,
+        aiMatches,
+        warnings,
+      }
+    });
 
   } catch (err) {
     console.error('Suggest categories error:', err);
