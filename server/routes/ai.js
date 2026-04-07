@@ -1,6 +1,7 @@
 import express from 'express';
-import { all, get } from '../db.js';
+import { all } from '../db.js';
 import { handleRouteError, HttpError } from '../http.js';
+import { buildAiWorkspaceContext } from '../workspace-utils.js';
 import {
   MAX_AI_SUGGESTION_ITEMS,
   assertMaxItems,
@@ -214,44 +215,20 @@ async function requestGeminiCategoryChunk(entries, apiKey) {
 
 function buildFinancialContext() {
   try {
-    const expensesByCategory = all(`
-      SELECT category, SUM(amount) as total, COUNT(*) as count
-      FROM expenses
-      WHERE date >= date('now', '-3 months')
-      GROUP BY category
-      ORDER BY total DESC
-    `);
-
-    const incomeTotal = get(`SELECT SUM(amount) as total FROM income WHERE date >= date('now', '-3 months')`);
-    const subscriptions = all(`SELECT name, amount, cycle FROM subscriptions WHERE active=1`);
-
-    const monthlySubTotal = subscriptions.reduce((sum, subscription) => {
-      if (subscription.cycle === 'monthly') return sum + Number(subscription.amount);
-      if (subscription.cycle === 'yearly') return sum + Number(subscription.amount) / 12;
-      if (subscription.cycle === 'weekly') return sum + Number(subscription.amount) * 4.33;
-      return sum + Number(subscription.amount);
-    }, 0);
-
-    const goals = all('SELECT category, monthly_limit FROM budget_goals');
-    const recentExpenses = all('SELECT description, amount, category, date FROM expenses ORDER BY date DESC LIMIT 20');
-
-    return {
-      period: 'last 3 months',
-      income: { total: Number(incomeTotal?.total) || 0 },
-      expenses: { byCategory: expensesByCategory },
-      subscriptions: { list: subscriptions, monthlyTotal: monthlySubTotal },
-      budgetGoals: goals,
-      recentExpenses,
-    };
+    return buildAiWorkspaceContext();
   } catch (error) {
     console.error('buildFinancialContext error:', error.message);
     return {
-      period: 'last 3 months',
-      income: { total: 0 },
-      expenses: { byCategory: [] },
-      subscriptions: { list: [], monthlyTotal: 0 },
-      budgetGoals: [],
-      recentExpenses: [],
+      focusPeriod: '',
+      focusLabel: '',
+      summary: {},
+      allTimeSummary: {},
+      spendByCategory: [],
+      monthlySeries: [],
+      merchantHighlights: [],
+      bucketBreakdown: [],
+      openReviewItems: 0,
+      reviewExamples: [],
     };
   }
 }
@@ -266,7 +243,7 @@ router.post('/chat', async (req, res) => {
     }
 
     const context = buildFinancialContext();
-    const prompt = `You are a sharp, friendly personal finance advisor. You have access to the user's real financial data below. Give specific, actionable advice. Be concise and direct. Use bullet points when listing multiple things. Format currency values in BRL (R$) unless the user asks otherwise. Do not make up data — only reason from what is provided.
+    const prompt = `You are a sharp, friendly financial analyst for imported bank statements and credit card bills. You have access to the user's reconciled financial workspace below. Focus on real economic result, reimbursements, internal transfers, card bill payments, and investment flows. Give specific, actionable advice. Be concise and direct. Use bullet points when listing multiple things. Format currency values in BRL (R$) unless the user asks otherwise. Do not make up data — only reason from what is provided.
 
 FINANCIAL DATA:
 ${JSON.stringify(context, null, 2)}

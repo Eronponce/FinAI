@@ -1,113 +1,183 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../../utils/api.js';
+import { useCurrency } from '../../hooks/useCurrency.jsx';
+import '../Workspace/Workspace.css';
 import './AIAdvisor.css';
 
 const QUICK_PROMPTS = [
-  'Where am I spending the most money?',
-  'Which subscriptions should I cancel?',
-  'How can I save R$500 this month?',
-  'Am I spending too much on food?',
-  'What is my savings rate?',
-  'Give me a summary of my finances',
+  'Quanto eu realmente gastei no ultimo mes importado?',
+  'Quanto foi transferencia interna versus gasto real?',
+  'Que entradas parecem ser reembolsos e nao receita?',
+  'O que mais pressiona meu resultado economico?',
+  'Resuma o ultimo mes com foco em gasto liquido e investimentos.',
+  'Quais movimentos eu deveria revisar primeiro?',
 ];
 
 function MessageBubble({ msg }) {
   return (
     <div className={`ai-bubble ai-bubble-${msg.role}`}>
-      {msg.role === 'assistant' && <div className="ai-bubble-avatar">✦</div>}
+      {msg.role === 'assistant' && <div className="ai-bubble-avatar">AI</div>}
       <div className="ai-bubble-text">
-        {msg.content.split('\n').map((line, i) => (
-          <React.Fragment key={i}>{line}{i < msg.content.split('\n').length - 1 && <br/>}</React.Fragment>
+        {msg.content.split('\n').map((line, index, lines) => (
+          <React.Fragment key={`${msg.role}-${index}`}>
+            {line}
+            {index < lines.length - 1 ? <br /> : null}
+          </React.Fragment>
         ))}
       </div>
-      {msg.role === 'user' && <div className="ai-bubble-avatar ai-bubble-avatar-user">👤</div>}
+      {msg.role === 'user' && <div className="ai-bubble-avatar ai-bubble-avatar-user">VOCE</div>}
     </div>
   );
 }
 
 export default function AIAdvisor() {
+  const { fmt } = useCurrency();
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: "Hi! I'm your AI Finance Advisor powered by Gemini. I have access to your financial data — income, expenses, and subscriptions.\n\nAsk me anything, like:\n• Where am I overspending?\n• Which subscriptions should I cut?\n• How can I save more this month?" }
+    {
+      role: 'assistant',
+      content: 'Eu leio o workspace reconciliado: gasto real, reembolsos, transferencias internas, pagamentos de fatura e investimento. Pergunte sobre o seu resultado economico de verdade.',
+    },
   ]);
-  const [input, setInput]     = useState('');
+  const [overview, setOverview] = useState(null);
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [apiMissing, setApiMissing] = useState(false);
   const bottomRef = useRef();
+
+  useEffect(() => {
+    api.get('/workspace/overview').then(setOverview).catch(() => setOverview(null));
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
   const send = async (text) => {
-    const msg = text || input.trim();
-    if (!msg || loading) return;
+    const nextMessage = text || input.trim();
+    if (!nextMessage || loading) return;
+
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: msg }]);
+    setMessages((current) => [...current, { role: 'user', content: nextMessage }]);
     setLoading(true);
+
     try {
-      const res = await api.post('/ai/chat', { message: msg });
-      setMessages(prev => [...prev, { role: 'assistant', content: res.reply }]);
-    } catch (e) {
-      if (e.message.includes('not configured') || e.message.includes('503')) {
+      const response = await api.post('/ai/chat', { message: nextMessage });
+      setMessages((current) => [...current, { role: 'assistant', content: response.reply }]);
+    } catch (error) {
+      if (error.message.includes('not configured') || error.message.includes('503')) {
         setApiMissing(true);
-        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Gemini API key not set. Add your GEMINI_API_KEY to the .env file in the project root and restart the server.\n\nGet a free key at: https://aistudio.google.com/app/apikey' }]);
+        setMessages((current) => [
+          ...current,
+          {
+            role: 'assistant',
+            content: 'Gemini ainda nao esta configurado. Adicione GEMINI_API_KEY ao arquivo .env na raiz do projeto e reinicie o servidor.',
+          },
+        ]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, I ran into an error: ${e.message}` }]);
+        setMessages((current) => [
+          ...current,
+          {
+            role: 'assistant',
+            content: `Encontrei um erro ao consultar a IA: ${error.message}`,
+          },
+        ]);
       }
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+  const handleKey = (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      send();
+    }
+  };
+
+  const summary = overview?.summary || {};
 
   return (
-    <div className="page-content" style={{display:'flex', flexDirection:'column', height:'calc(100vh - 40px)'}}>
-      <div className="page-header">
-        <h1>✦ AI Advisor</h1>
-        <p>Ask anything about your finances — powered by Gemini AI</p>
-      </div>
-
-      <div style={{background:'var(--blue-soft)', border:'1px solid rgba(59,130,246,0.22)', borderRadius:'var(--radius-md)', padding:'12px 16px', marginBottom:16, fontSize:'0.85rem', color:'var(--text-secondary)'}}>
-        AI replies use Google Gemini. When you send a message here, your question plus the relevant finance summary from this app are sent to Gemini to generate the response.
-      </div>
-
-      {apiMissing && (
-        <div style={{background:'var(--yellow-soft)', border:'1px solid rgba(245,158,11,0.3)', borderRadius:'var(--radius-md)', padding:'12px 16px', marginBottom:16, fontSize:'0.85rem', color:'var(--yellow)'}}>
-          <strong>Setup required:</strong> Add <code style={{background:'rgba(0,0,0,0.2)',padding:'1px 6px',borderRadius:4}}>GEMINI_API_KEY=your_key</code> to your <code>.env</code> file and restart the server. Free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{color:'inherit'}}>aistudio.google.com</a>
+    <div className="page-content" style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 40px)' }}>
+      <section className="workspace-hero">
+        <span className="workspace-kicker">AI Analyst</span>
+        <h1>Converse com o workspace reconciliado.</h1>
+        <p>
+          A resposta leva em conta o mes mais recente importado, o historico reconciliado, as categorias homologadas
+          e os itens ainda abertos na review queue.
+        </p>
+        <div className="workspace-chip-row">
+          <span className="workspace-chip">{overview?.focusLabel || 'Sem periodo'}</span>
+          <span className="workspace-chip">Resultado {fmt(summary.economicResult || 0)}</span>
+          <span className="workspace-chip">Pendencias {summary.reviewCount || 0}</span>
         </div>
-      )}
+      </section>
+
+      <div className="workspace-summary-banner mb-4">
+        <div>
+          <strong>Como esta conversa funciona</strong>
+          <p>A IA recebe sua pergunta junto com o contexto reconciliado deste app. Assim ela fala de gasto real, nao so de entradas e saidas brutas.</p>
+        </div>
+        <div className="workspace-inline-actions">
+          <span className="badge badge-green">Receita real {fmt(summary.grossIncome || 0)}</span>
+          <span className="badge badge-red">Gasto liquido {fmt(summary.netPersonalSpend || 0)}</span>
+        </div>
+      </div>
+
+      <div className="mini-stats mb-4">
+        <div className="mini-stat">
+          <span>Receita real</span>
+          <strong className="text-green">{fmt(summary.grossIncome || 0)}</strong>
+        </div>
+        <div className="mini-stat">
+          <span>Gasto liquido</span>
+          <strong className="text-red">{fmt(summary.netPersonalSpend || 0)}</strong>
+        </div>
+        <div className="mini-stat">
+          <span>Reembolsos</span>
+          <strong>{fmt((summary.reimbursements || 0) + (summary.refunds || 0))}</strong>
+        </div>
+      </div>
+
+      {apiMissing ? (
+        <div style={{ background: 'var(--yellow-soft)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: 16, fontSize: '0.85rem', color: 'var(--yellow)' }}>
+          <strong>Setup:</strong> adicione <code style={{ background: 'rgba(0,0,0,0.2)', padding: '1px 6px', borderRadius: 4 }}>GEMINI_API_KEY=...</code> ao seu <code>.env</code> e reinicie o servidor.
+        </div>
+      ) : null}
 
       <div className="ai-quick-prompts">
-        {QUICK_PROMPTS.map(p => (
-          <button key={p} className="ai-quick-btn" onClick={() => send(p)} disabled={loading}>{p}</button>
+        {QUICK_PROMPTS.map((prompt) => (
+          <button key={prompt} className="ai-quick-btn" onClick={() => send(prompt)} disabled={loading}>
+            {prompt}
+          </button>
         ))}
       </div>
 
-      <div className="ai-chat-window card" style={{flex:1, display:'flex', flexDirection:'column', minHeight:0}}>
+      <div className="ai-chat-window card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div className="ai-messages">
-          {messages.map((m, i) => <MessageBubble key={i} msg={m} />)}
-          {loading && (
+          {messages.map((message, index) => <MessageBubble key={`${message.role}-${index}`} msg={message} />)}
+          {loading ? (
             <div className="ai-bubble ai-bubble-assistant">
-              <div className="ai-bubble-avatar">✦</div>
+              <div className="ai-bubble-avatar">AI</div>
               <div className="ai-typing">
-                <span/><span/><span/>
+                <span /><span /><span />
               </div>
             </div>
-          )}
+          ) : null}
           <div ref={bottomRef} />
         </div>
         <div className="ai-input-bar">
           <textarea
             id="ai-chat-input"
             className="form-textarea ai-textarea"
-            placeholder="Ask about your finances…"
+            placeholder="Pergunte sobre gasto real, reembolsos, investimentos ou o que merece revisao..."
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKey}
             rows={2}
             disabled={loading}
           />
           <button id="ai-send-btn" className="btn btn-primary ai-send-btn" onClick={() => send()} disabled={loading || !input.trim()}>
-            {loading ? <span className="spinner" /> : '↑'}
+            {loading ? <span className="spinner" /> : 'ENVIAR'}
           </button>
         </div>
       </div>

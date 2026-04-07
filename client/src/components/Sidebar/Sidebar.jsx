@@ -2,65 +2,36 @@ import React from 'react';
 import './Sidebar.css';
 
 const NAV = [
-  { id: 'dashboard',     icon: '◈',  label: 'Dashboard' },
-  { id: 'accounts',      icon: '🏛',  label: 'Accounts' },
-  { id: 'income',        icon: '↑',  label: 'Income' },
-  { id: 'expenses',      icon: '↓',  label: 'Expenses' },
-  { id: 'subscriptions', icon: '⟳',  label: 'Subscriptions' },
-  { id: 'csv-import',    icon: '⊞',  label: 'Import CSV' },
-  { id: 'budget-goals',  icon: '◎',  label: 'Budget Goals' },
-  { id: 'ai-advisor',    icon: '✦',  label: 'AI Advisor' },
-  { id: 'settings',      icon: '⚙',  label: 'Settings' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'reports', label: 'Reports' },
+  { id: 'ai-analyst', label: 'AI Analyst' },
+  { id: 'audit', label: 'Audit Trail' },
+  { id: 'review-queue', label: 'Review Queue' },
+  { id: 'import-center', label: 'Import Center' },
+  { id: 'settings', label: 'Settings' },
 ];
 
-export default function Sidebar({ active, onNavigate, open, onClose }) {
+export default function Sidebar({ active, onNavigate }) {
   return (
-    <aside className={`sidebar ${open ? 'is-open' : ''}`}>
+    <header className="sidebar">
       <div className="sidebar-shell">
-        <div className="sidebar-topbar">
-          <div className="sidebar-logo">
-            <span className="sidebar-logo-icon">◈</span>
-            <span className="sidebar-logo-text">Finance<span className="gradient-text">AI</span></span>
-          </div>
-          <button className="sidebar-close" type="button" onClick={onClose} aria-label="Close navigation">
-            ✕
-          </button>
-        </div>
+        <button className="sidebar-logo" type="button" onClick={() => onNavigate('overview')}>
+          <span className="sidebar-logo-icon">FA</span>
+          <span className="sidebar-logo-text">Fin<span className="gradient-text">AI</span></span>
+        </button>
 
-        <nav className="sidebar-nav">
-          {NAV.map(item => (
+        <nav className="sidebar-nav" aria-label="Primary">
+          {NAV.map((item) => (
             <button
               key={item.id}
               className={`sidebar-item ${active === item.id ? 'active' : ''}`}
               onClick={() => onNavigate(item.id)}
             >
-              <span className="sidebar-item-icon">{item.icon}</span>
-              <span className="sidebar-item-copy">
-                <span className="sidebar-item-label">{item.label}</span>
-                <span className="sidebar-item-sub">
-                  {item.id === 'dashboard' && 'Overview'}
-                  {item.id === 'accounts' && 'Assets & liabilities'}
-                  {item.id === 'income' && 'Cash in'}
-                  {item.id === 'expenses' && 'Cash out'}
-                  {item.id === 'subscriptions' && 'Recurring'}
-                  {item.id === 'csv-import' && 'Bring data in'}
-                  {item.id === 'budget-goals' && 'Targets'}
-                  {item.id === 'ai-advisor' && 'Guidance'}
-                  {item.id === 'settings' && 'Preferences'}
-                </span>
-              </span>
-              {active === item.id && <span className="sidebar-active-bar" />}
+              <span className="sidebar-item-label">{item.label}</span>
             </button>
           ))}
         </nav>
-
-        <div className="sidebar-footer">
-          <div className="sidebar-footer-meta">
-            <div className="sidebar-footer-text">FinanceAI v1.0</div>
-            <div className="sidebar-footer-sub">Designed for calm, deliberate money management</div>
-          </div>
-        </div>
       </div>
-    </aside>
+    </header>
   );
 }

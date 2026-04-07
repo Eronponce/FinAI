@@ -2,41 +2,31 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../../utils/api.js';
 import { useCurrency } from '../../hooks/useCurrency.jsx';
 import { CURRENCIES } from '../../utils/categories.js';
+import '../Workspace/Workspace.css';
 
 const RESET_CONFIRMATION = 'RESET-ALL-DATA';
 
 export default function Settings() {
   const { setSymbol, setCode } = useCurrency();
-  const [settings, setSettings] = useState({ currency:'BRL', currency_symbol:'R$' });
-  const [saving, setSaving]     = useState(false);
-  const [saved, setSaved]       = useState(false);
+  const [settings, setSettings] = useState({ currency: 'BRL', currency_symbol: 'R$' });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [clearing, setClearing] = useState(false);
-
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const clearDatabase = async () => {
-    setShowConfirm(false);
-    setClearing(true);
-    try {
-      await api.post(
-        '/settings/reset',
-        { confirmation: RESET_CONFIRMATION },
-        { headers: { 'X-Reset-Confirmation': RESET_CONFIRMATION } }
-      );
-      window.location.href = '/'; // Redirect to home so they get a fresh state
-    } catch (e) {
-      alert("Failed to clear database: " + e.message);
-      setClearing(false);
-    }
-  };
-
   useEffect(() => {
-    api.get('/settings').then(s => { setSettings(s); }).catch(() => {});
+    api.get('/settings').then(setSettings).catch(() => {});
   }, []);
 
-  const handleCurrencyChange = (e) => {
-    const cur = CURRENCIES.find(c => c.code === e.target.value);
-    if (cur) setSettings(s => ({ ...s, currency: cur.code, currency_symbol: cur.symbol }));
+  const handleCurrencyChange = (event) => {
+    const currency = CURRENCIES.find((item) => item.code === event.target.value);
+    if (currency) {
+      setSettings((current) => ({
+        ...current,
+        currency: currency.code,
+        currency_symbol: currency.symbol,
+      }));
+    }
   };
 
   const save = async () => {
@@ -47,114 +37,154 @@ export default function Settings() {
       setCode(updated.currency);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearDatabase = async () => {
+    setShowConfirm(false);
+    setClearing(true);
+    try {
+      await api.post(
+        '/settings/reset',
+        { confirmation: RESET_CONFIRMATION },
+        { headers: { 'X-Reset-Confirmation': RESET_CONFIRMATION } }
+      );
+      window.location.href = '/';
+    } catch (error) {
+      alert(`Falha ao limpar a base: ${error.message}`);
+      setClearing(false);
+    }
   };
 
   return (
     <div className="page-content">
-      <div className="page-header">
-        <h1>Settings</h1>
-        <p>Configure your dashboard preferences</p>
+      <section className="workspace-hero">
+        <span className="workspace-kicker">Settings</span>
+        <h1>Configuracoes do workspace local.</h1>
+        <p>Esta tela ficou focada no essencial: moeda, uso da IA, armazenamento local e o reset completo da base.</p>
+        <div className="workspace-chip-row">
+          <span className="workspace-chip">{settings.currency_symbol} {settings.currency}</span>
+          <span className="workspace-chip">Local-first</span>
+        </div>
+      </section>
+
+      <div className="workspace-summary-banner mb-4">
+        <div>
+          <strong>Leitura rapida</strong>
+          <p>Quase tudo aqui e local. A unica integracao externa opcional hoje e a consulta da IA.</p>
+        </div>
+        <div className="workspace-inline-actions">
+          <span className="badge badge-green">Base local</span>
+          <span className="badge badge-muted">IA opcional</span>
+        </div>
       </div>
 
-      <div className="card" style={{maxWidth:560}}>
-        <div className="card-header">
-          <span className="card-title">💱 Currency</span>
-        </div>
-        <div className="card-body" style={{display:'flex', flexDirection:'column', gap:20}}>
-          <div className="form-group">
-            <label className="form-label">Display Currency</label>
-            <select id="currency-select" className="form-select" value={settings.currency} onChange={handleCurrencyChange}>
-              {CURRENCIES.map(c => (
-                <option key={c.code} value={c.code}>{c.label}</option>
-              ))}
-            </select>
-            <div style={{fontSize:'0.78rem', color:'var(--text-muted)', marginTop:4}}>
-              All amounts will display in {settings.currency_symbol} {settings.currency}
+      <div className="grid-2">
+        <div className="workspace-section-stack">
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Moeda</span>
+            </div>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div className="form-group">
+                <label className="form-label">Display Currency</label>
+                <select id="currency-select" className="form-select" value={settings.currency} onChange={handleCurrencyChange}>
+                  {CURRENCIES.map((currency) => (
+                    <option key={currency.code} value={currency.code}>{currency.label}</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  Todos os valores aparecem em {settings.currency_symbol} {settings.currency}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <button id="save-settings-btn" className="btn btn-primary" onClick={save} disabled={saving}>
+                  {saving ? <span className="spinner" /> : 'Salvar configuracoes'}
+                </button>
+                {saved ? <span className="badge badge-green">Salvo</span> : null}
+              </div>
             </div>
           </div>
-          <div style={{display:'flex', alignItems:'center', gap:12}}>
-            <button id="save-settings-btn" className="btn btn-primary" onClick={save} disabled={saving}>
-              {saving ? <span className="spinner" /> : 'Save Settings'}
-            </button>
-            {saved && <span className="badge badge-green">✓ Saved</span>}
-          </div>
-        </div>
-      </div>
 
-      <div className="card" style={{maxWidth:560, marginTop:20}}>
-        <div className="card-header">
-          <span className="card-title">🤖 AI Advisor Setup</span>
-        </div>
-        <div className="card-body" style={{display:'flex', flexDirection:'column', gap:16}}>
-          <div style={{background:'var(--accent-gradient-soft)', border:'1px solid var(--border-accent)', borderRadius:'var(--radius-md)', padding:16}}>
-            <div style={{fontWeight:600, marginBottom:8}}>How to get your Gemini API key</div>
-            <ol style={{listStyle:'decimal', paddingLeft:18, display:'flex', flexDirection:'column', gap:6, fontSize:'0.875rem', color:'var(--text-secondary)'}}>
-              <li>Visit <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{color:'var(--text-accent)'}}>aistudio.google.com/app/apikey</a></li>
-              <li>Sign in with your Google account</li>
-              <li>Click <strong style={{color:'var(--text-primary)'}}>Create API Key</strong></li>
-              <li>Copy the key and add it to your <code style={{background:'var(--bg-input)',padding:'1px 6px',borderRadius:4}}>.env</code> file:</li>
-            </ol>
-            <div style={{background:'var(--bg-base)', borderRadius:'var(--radius-sm)', padding:'10px 14px', marginTop:12, fontFamily:'monospace', fontSize:'0.85rem', color:'var(--text-accent)', border:'1px solid var(--border)'}}>
-              GEMINI_API_KEY=your_key_here
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Dados locais</span>
             </div>
-            <div style={{fontSize:'0.78rem', color:'var(--text-muted)', marginTop:8}}>
-              Free tier: 1,500 requests/day — more than enough for personal use. Restart the server after adding the key.
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                Seus dados ficam locais em <code style={{ background: 'var(--bg-input)', padding: '1px 6px', borderRadius: 4 }}>server/finances.db</code>.
+                O workspace guarda lotes importados, movimentos semanticos, regras pessoais e a fila de revisao. Se voce usar IA,
+                a pergunta e o contexto reconciliado sao enviados ao Gemini.
+              </div>
+              <div style={{ gap: 8, display: 'flex', flexWrap: 'wrap' }}>
+                <span className="badge badge-green">Local-First</span>
+                <span className="badge badge-muted">Sem conta online</span>
+                <span className="badge badge-muted">IA usa internet</span>
+              </div>
             </div>
           </div>
         </div>
+
+        <div className="workspace-section-stack">
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">AI Analyst Setup</span>
+            </div>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ background: 'var(--accent-gradient-soft)', border: '1px solid var(--border-accent)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>Como obter sua chave do Gemini</div>
+                <ol style={{ listStyle: 'decimal', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  <li>Acesse <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: 'var(--text-accent)' }}>aistudio.google.com/app/apikey</a></li>
+                  <li>Entre com sua conta Google</li>
+                  <li>Clique em <strong style={{ color: 'var(--text-primary)' }}>Create API Key</strong></li>
+                  <li>Adicione a chave ao arquivo <code style={{ background: 'var(--bg-input)', padding: '1px 6px', borderRadius: 4 }}>.env</code> na raiz do projeto</li>
+                </ol>
+                <div style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginTop: 12, fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--text-accent)', border: '1px solid var(--border)' }}>
+                  GEMINI_API_KEY=your_key_here
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+            <div className="card-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.2)' }}>
+              <span className="card-title text-red">Danger Zone</span>
+            </div>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                Esta acao apaga todos os dados locais: lotes importados, movimentos reconciliados, regras pessoais, contas legadas,
+                assinaturas e configuracoes. Nao existe desfazer.
+              </div>
+              <div>
+                <button className="btn btn-danger" onClick={() => setShowConfirm(true)} disabled={clearing}>
+                  {clearing ? <span className="spinner" /> : 'Apagar todos os dados e resetar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="card" style={{maxWidth:560, marginTop:20}}>
-        <div className="card-header">
-          <span className="card-title">💾 Data</span>
-        </div>
-        <div className="card-body" style={{display:'flex', flexDirection:'column', gap:12}}>
-          <div style={{fontSize:'0.875rem', color:'var(--text-secondary)'}}>
-            Your data is stored locally in <code style={{background:'var(--bg-input)',padding:'1px 6px',borderRadius:4}}>server/finances.db</code> on your machine. Standard tracking features stay local. If you use AI chat or AI categorization, the relevant prompt and financial context are sent to Gemini.
-          </div>
-          <div style={{gap:8, display:'flex'}}>
-            <span className="badge badge-green">✓ Local-First</span>
-            <span className="badge badge-muted">No Account Required</span>
-            <span className="badge badge-muted">AI Uses Internet</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="card" style={{maxWidth:560, marginTop:20, borderColor:'rgba(239, 68, 68, 0.4)'}}>
-        <div className="card-header" style={{borderBottomColor:'rgba(239, 68, 68, 0.2)'}}>
-          <span className="card-title text-red">⚠️ Danger Zone</span>
-        </div>
-        <div className="card-body" style={{display:'flex', flexDirection:'column', gap:12}}>
-          <div style={{fontSize:'0.875rem', color:'var(--text-secondary)'}}>
-            This action will permanently delete all your data including accounts, income, expenses, subscriptions, budget goals, and saved settings. This action cannot be undone.
-          </div>
-          <div>
-            <button className="btn btn-danger" onClick={() => setShowConfirm(true)} disabled={clearing}>
-              {clearing ? <span className="spinner" /> : 'Delete All Data & Reset Application'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {showConfirm && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowConfirm(false)}>
-          <div className="modal" style={{maxWidth: '500px'}}>
+      {showConfirm ? (
+        <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && setShowConfirm(false)}>
+          <div className="modal" style={{ maxWidth: '500px' }}>
             <div className="modal-header">
-              <span className="modal-title text-red">⚠️ Confirm Full Reset</span>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowConfirm(false)}>✕</button>
+              <span className="modal-title text-red">Confirm Full Reset</span>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowConfirm(false)}>X</button>
             </div>
             <div className="modal-body">
-              <p>WARNING: This will permanently delete ALL data (Accounts, Income, Expenses, Subscriptions, Goals) and reset all settings. This action cannot be undone.</p>
-              <p style={{marginTop: 10, fontWeight: 600}}>Are you absolutely sure?</p>
+              <p>WARNING: isso vai apagar TODO o workspace local, incluindo imports, regras, review queue, relatorios e configuracoes.</p>
+              <p style={{ marginTop: 10, fontWeight: 600 }}>Tem certeza absoluta?</p>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowConfirm(false)}>Cancel</button>
-              <button className="btn btn-danger" onClick={clearDatabase}>Confirm Delete All</button>
+              <button className="btn btn-secondary" onClick={() => setShowConfirm(false)}>Cancelar</button>
+              <button className="btn btn-danger" onClick={clearDatabase}>Confirmar reset</button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
