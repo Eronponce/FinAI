@@ -68,6 +68,10 @@ router.post('/reset', (req, res) => {
     run('DELETE FROM budget_goals');
     run('DELETE FROM accounts');
     run('DELETE FROM settings');
+    run('DELETE FROM import_rules');
+    run('DELETE FROM import_batches');
+    run('DELETE FROM economic_rules');
+    run('DELETE FROM economic_movements');
 
     run("INSERT OR IGNORE INTO settings (key, value) VALUES ('currency', 'BRL')");
     run("INSERT OR IGNORE INTO settings (key, value) VALUES ('currency_symbol', 'R$')");

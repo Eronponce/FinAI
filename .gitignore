@@ -1,5 +1,9 @@
 node_modules/
 client/node_modules/
 .env
+.finai-runtime/
 server/finances.db
 dist/
+playwright-report/
+test-results/
+/ExampleCSV

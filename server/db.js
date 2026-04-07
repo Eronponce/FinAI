@@ -69,6 +69,79 @@ export async function initDB() {
       currency TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS import_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      normalized_description TEXT NOT NULL,
+      sample_description TEXT NOT NULL,
+      transaction_type TEXT NOT NULL,
+      category TEXT DEFAULT '',
+      payment_method TEXT DEFAULT '',
+      recurrence TEXT DEFAULT '',
+      is_subscription INTEGER DEFAULT 0,
+      subscription_cycle TEXT DEFAULT 'monthly',
+      subscription_name TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(transaction_type, normalized_description)
+    );
+    CREATE TABLE IF NOT EXISTS import_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_file TEXT DEFAULT '',
+      institution TEXT DEFAULT '',
+      statement_type TEXT DEFAULT '',
+      row_count INTEGER DEFAULT 0,
+      period_start TEXT DEFAULT '',
+      period_end TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS economic_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      normalized_description TEXT NOT NULL,
+      sample_description TEXT NOT NULL,
+      transaction_type TEXT NOT NULL,
+      statement_type TEXT DEFAULT '',
+      economic_type TEXT NOT NULL,
+      reporting_bucket TEXT NOT NULL,
+      category TEXT DEFAULT '',
+      counterparty TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(transaction_type, statement_type, normalized_description)
+    );
+    CREATE TABLE IF NOT EXISTS economic_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fingerprint TEXT NOT NULL UNIQUE,
+      legacy_kind TEXT NOT NULL,
+      legacy_id INTEGER,
+      batch_id INTEGER,
+      statement_type TEXT DEFAULT '',
+      institution TEXT DEFAULT '',
+      source_file TEXT DEFAULT '',
+      external_id TEXT DEFAULT '',
+      date TEXT NOT NULL,
+      description TEXT NOT NULL,
+      cleaned_description TEXT DEFAULT '',
+      normalized_description TEXT NOT NULL,
+      amount REAL NOT NULL,
+      transaction_type TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      category TEXT DEFAULT '',
+      raw_category TEXT DEFAULT '',
+      payment_method TEXT DEFAULT 'other',
+      recurrence TEXT DEFAULT 'one-time',
+      account_id INTEGER,
+      economic_type TEXT NOT NULL,
+      reporting_bucket TEXT NOT NULL,
+      confidence INTEGER DEFAULT 0,
+      source TEXT DEFAULT 'heuristic',
+      reason TEXT DEFAULT '',
+      counterparty TEXT DEFAULT '',
+      merchant TEXT DEFAULT '',
+      linked_key TEXT DEFAULT '',
+      needs_review INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Default settings

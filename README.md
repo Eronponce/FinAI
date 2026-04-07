@@ -70,6 +70,36 @@ http://localhost:5173
 
 The frontend talks to the backend through Vite's `/api` proxy.
 
+## Windows Control Panel
+
+If you are on Windows, you can now use the launcher in the project root:
+
+```bat
+finai-panel.bat
+```
+
+What it does:
+
+- creates `.env` automatically from `.env.example` on first run
+- installs missing dependencies automatically
+- starts the API and the UI in the background
+- lets you stop or restart the full app, or just the API/UI, from a simple panel
+- opens the app in your browser
+
+You can also use command-line shortcuts:
+
+```bat
+finai-panel.bat start
+finai-panel.bat stop
+finai-panel.bat restart
+finai-panel.bat status
+finai-panel.bat restart-api
+finai-panel.bat restart-ui
+```
+
+The launcher stores temporary PID files in `.finai-runtime/` so it can stop and restart the right processes.
+It also writes runtime logs there, including `api.out.log`, `api.err.log`, `ui.out.log`, and `ui.err.log`.
+
 ## Running Frontend And Backend Separately
 
 Start only the backend:
@@ -120,10 +150,10 @@ Important:
 
 ```text
 .
-├── client/        # React + Vite frontend
-├── server/        # Express API and SQLite database setup
-├── package.json   # root scripts for full-stack development
-└── .env           # local environment variables
+â”œâ”€â”€ client/        # React + Vite frontend
+â”œâ”€â”€ server/        # Express API and SQLite database setup
+â”œâ”€â”€ package.json   # root scripts for full-stack development
+â””â”€â”€ .env           # local environment variables
 ```
 
 ## Troubleshooting

@@ -66,6 +66,8 @@ initDB().then(async () => {
   const { default: settingsRoutes } = await import('./routes/settings.js');
   const { default: aiRoutes } = await import('./routes/ai.js');
   const { default: accountsRoutes } = await import('./routes/accounts.js');
+  const { default: importRoutes } = await import('./routes/imports.js');
+  const { default: workspaceRoutes } = await import('./routes/workspace.js');
 
   app.use('/api/income', incomeRoutes);
   app.use('/api/expenses', expensesRoutes);
@@ -74,6 +76,8 @@ initDB().then(async () => {
   app.use('/api/settings', settingsRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/accounts', accountsRoutes);
+  app.use('/api/import', importRoutes);
+  app.use('/api/workspace', workspaceRoutes);
 
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
